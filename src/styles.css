@@ -1,0 +1,32 @@
+@keyframes slideInFloat {
+  0% { 
+    opacity: 0; 
+    transform: translateY(40px) scale(0.9);
+    filter: blur(10px);
+  }
+  15% { 
+    opacity: 1; 
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+  25% { transform: translate(5px, -5px) rotate(1deg); }
+  50% { transform: translate(-5px, 5px) rotate(-1deg); }
+  75% { transform: translate(3px, -3px) rotate(0.5deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
+}
+
+.text-slide-in {
+  opacity: 0;
+  animation: slideInFloat 8s ease-in-out forwards infinite;
+}
+
+.cosmic-text {
+  color: white;
+  text-shadow:
+    0 0 10px #000000,
+    0 0 20px #000000,
+    0 0 30px #000000,
+    0 0 40px #000000,
+    0 0 50px #000000;
+}
+
