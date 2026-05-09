@@ -1,0 +1,15 @@
+.DS_Store
+node_modules
+dist
+.vercel
+.VSCodeCounter
+.env*
+.autosave
+.wav
+!static/sounds/music/*.wav
+
+# Personal / derivative files (not for public deployment)
+*.pdf
+Screenshot*
+resources/folio-2025.akshat.blend*
+resources/folio-2025.blend1
