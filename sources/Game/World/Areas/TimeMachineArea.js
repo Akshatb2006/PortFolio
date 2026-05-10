@@ -24,8 +24,7 @@ export class TimeMachineArea extends Area
             InteractivePoints.STATE_CONCEALED,
             () =>
             {
-                // TODO: point to your own old/legacy portfolio URL, or remove this area entirely.
-                window.open('https://github.com/your-github-handle')
+                window.open('https://github.com/Akshatb2006')
             },
             () =>
             {

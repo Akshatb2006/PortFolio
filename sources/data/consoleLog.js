@@ -21,10 +21,12 @@ const text = `
 ╚═══════════════════════╝
 
 ╔═ Socials ═══════════════╗
-║ Mail     ⇒ your-email@example.com
-║ GitHub   ⇒ https://github.com/your-github-handle
-║ LinkedIn ⇒ https://www.linkedin.com/in/your-linkedin-handle/
-║ X        ⇒ https://x.com/your-x-handle
+║ Mail      ⇒ kysuakshat23@gmail.com
+║ GitHub    ⇒ https://github.com/Akshatb2006
+║ LinkedIn  ⇒ https://www.linkedin.com/in/akshat-baranwal-936797313/
+║ X         ⇒ https://x.com/Akshat_B23
+║ Discord   ⇒ akshatbaranwal_99532
+║ Instagram ⇒ https://www.instagram.com/akshatb_23
 ╚═══════════════════════╝
 
 ╔═ Experience ══════════╗

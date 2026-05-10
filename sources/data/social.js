@@ -1,8 +1,13 @@
-// TODO: replace the placeholder URLs below with your real handles.
-// `align: 'right' | 'left'` controls which side of the in-world social area the link appears on.
+// `align: 'right' | 'left'` controls which side of the in-world social area
+// the floating label appears on.
 export default [
-    { name: 'GitHub', url: 'https://github.com/your-github-handle', align: 'right' },
-    { name: 'LinkedIn', url: 'https://www.linkedin.com/in/your-linkedin-handle/', align: 'right' },
-    { name: 'Mail', url: 'mailto:your-email@example.com', align: 'right' },
-    { name: 'X', url: 'https://x.com/your-x-handle', align: 'left' },
+    { name: 'GitHub',    url: 'https://github.com/Akshatb2006',                          align: 'right' },
+    { name: 'LinkedIn',  url: 'https://www.linkedin.com/in/akshat-baranwal-936797313/',  align: 'right' },
+    { name: 'Mail',      url: 'mailto:kysuakshat23@gmail.com',                           align: 'right' },
+    { name: 'X',         url: 'https://x.com/Akshat_B23',                                align: 'left'  },
+    // Discord uses numeric IDs in user URLs; opening this link will land on
+    // Discord but won't resolve to a profile from a username alone. Replace
+    // with a server invite or numeric user ID when available.
+    { name: 'Discord',   url: 'https://discord.com/users/akshatbaranwal_99532',          align: 'left'  },
+    { name: 'Instagram', url: 'https://www.instagram.com/akshatb_23',                    align: 'left'  },
 ]

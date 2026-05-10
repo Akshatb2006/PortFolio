@@ -9,31 +9,31 @@
 export default [
     {
         title: 'ActiTrace',
-        url: 'https://github.com/your-github-handle/actitrace',
+        url: 'https://github.com/Akshatb2006/ActiTrace',
         image: 'actitrace.png',
         imageMini: 'actitrace-mini.png',
     },
     {
         title: 'Life Drift',
-        url: 'https://github.com/your-github-handle/life-drift',
+        url: 'https://github.com/Akshatb2006/Life_Drift',
         image: 'life-drift.png',
         imageMini: 'life-drift-mini.png',
     },
     {
         title: 'Robot Paint Optimizer',
-        url: 'https://github.com/your-github-handle/robot-paint-optimizer',
+        url: 'https://github.com/Akshatb2006/Paint_Robot',
         image: 'robot-paint.png',
         imageMini: 'robot-paint-mini.png',
     },
     {
         title: 'Secure Transaction Storage',
-        url: 'https://github.com/your-github-handle/secure-transaction-storage',
+        url: 'https://github.com/Akshatb2006/Secure-Transactions-Mini-App',
         image: 'secure-tx.png',
         imageMini: 'secure-tx-mini.png',
     },
     {
         title: 'VERIDICT',
-        url: 'https://github.com/your-github-handle/veridict',
+        url: 'https://github.com/Akshatb2006/VERIDICT',
         image: 'veridict.png',
         imageMini: 'veridict-mini.png',
     },

@@ -9,7 +9,7 @@ export default [
     {
         title: 'InsightEdge',
         titleSmall: [ 'Insight', 'Edge' ],
-        url: 'https://github.com/your-github-handle/insightedge',
+        url: 'https://github.com/Manishym956/IgniteEdge',
         attributes:
         {
             role: [ 'Full stack developer' ],
@@ -39,7 +39,7 @@ export default [
     {
         title: 'Resume Parser',
         titleSmall: [ 'Resume', 'Parser' ],
-        url: 'https://autometa.ai',
+        url: 'https://github.com/Akshatb2006/Resume-Parser',
         attributes:
         {
             role: [ 'SDE Intern' ],
