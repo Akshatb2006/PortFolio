@@ -53,6 +53,7 @@ export class Map
             { name: 'Projects', respawnName: 'projects', offset: { x: 0, y: -0.02 } },
             { name: 'Social', respawnName: 'social', offset: { x: -0.01, y: -0.04 } },
             { name: 'Time Machine', respawnName: 'timeMachine', offset: { x: 0, y: 0 } },
+            { name: 'Treasure', respawnName: 'treasureBox', offset: { x: 0, y: 0 } },
         ]
 
         for(const item of this.locations.items)
