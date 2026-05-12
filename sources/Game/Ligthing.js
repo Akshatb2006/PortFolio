@@ -109,7 +109,7 @@ export class Lighting
     {
         this.light = new THREE.DirectionalLight(0xffffff, 5)
         this.light.position.setFromSpherical(this.spherical)
-        this.light.castShadow = true
+        this.light.castShadow = this.game.quality.level === 0
 
         this.game.scene.add(this.light)
         this.game.scene.add(this.light.target)
@@ -169,6 +169,7 @@ export class Lighting
         {
             this.mapSize = this.game.quality.level === 0 ? 2048 : 512
             this.light.shadow.mapSize.set(this.mapSize, this.mapSize)
+            this.light.castShadow = this.game.quality.level === 0
         })
     }
 
