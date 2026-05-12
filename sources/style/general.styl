@@ -389,31 +389,3 @@ html:not(.is-server-offline) .offline-element
 html:not(.is-server-online) .online-element
     display none !important
 
-.unsupported
-    display none
-    position fixed
-    inset 0
-    z-index 1000
-    align-items center
-    justify-content center
-    padding 24px
-    background radial-gradient(farthest-side at 0 0, #251f2b, #1d1721)
-    color #ffffff
-
-    &.is-visible
-        display flex
-
-    .inner
-        max-width 520px
-        text-align center
-
-        h1
-            font-family "Amatic SC", sans-serif
-            font-size 3rem
-            margin-bottom 0.5em
-
-        p
-            margin-bottom 0.75em
-            font-size 1rem
-            line-height 1.5
-

@@ -9,12 +9,8 @@ export class Quality
 
         this.events = new Events()
 
-        const isMobileUA = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-        const lowMemory = typeof navigator.deviceMemory === 'number' && navigator.deviceMemory <= 4
-        const fewCores = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4
-        this.isMobile = isMobileUA
-        this.isConstrained = isMobileUA || lowMemory || fewCores
-        this.level = this.isConstrained ? 1 : 0 // 0 = highest quality
+        const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+        this.level = isMobile ? 1 : 0 // 0 = highest quality
 
         // Debug
         if(this.game.debug.active)

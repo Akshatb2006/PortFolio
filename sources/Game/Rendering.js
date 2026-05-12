@@ -41,14 +41,14 @@ export class Rendering
             canvas: this.game.canvasElement,
             powerPreference: 'high-performance',
             forceWebGL: false,
-            antialias: this.game.quality.level === 0 && this.game.viewport.pixelRatio < 2
+            antialias: this.game.viewport.pixelRatio < 2
         })
         this.renderer.setSize(this.game.viewport.width, this.game.viewport.height)
         this.renderer.setPixelRatio(this.game.viewport.pixelRatio)
         this.renderer.sortObjects = false
 
         this.renderer.domElement.classList.add('experience')
-        this.renderer.shadowMap.enabled = this.game.quality.level === 0
+        this.renderer.shadowMap.enabled = true
         // this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
         this.renderer.setOpaqueSort((a, b) =>
         {
@@ -59,11 +59,6 @@ export class Rendering
             return a.renderOrder - b.renderOrder
         })
 
-        this.game.quality.events.on('change', (level) =>
-        {
-            this.renderer.shadowMap.enabled = level === 0
-        })
-
         if(location.hash.match(/inspector/i))
         {
             this.renderer.inspector = new Inspector()
@@ -72,25 +67,8 @@ export class Rendering
         // Make the renderer control the ticker
         this.renderer.setAnimationLoop((elapsedTime) => { this.game.ticker.update(elapsedTime) })
 
-        try
-        {
-            await this.renderer.init()
-        }
-        catch(error)
-        {
-            this.showUnsupportedOverlay(error)
-            throw error
-        }
-
         return this.renderer
-    }
-
-    showUnsupportedOverlay(error)
-    {
-        console.error('Renderer init failed:', error)
-        const overlay = document.querySelector('.js-unsupported')
-        if(overlay)
-            overlay.classList.add('is-visible')
+            .init()
     }
 
     setPostprocessing()
@@ -117,7 +95,7 @@ export class Rendering
             }
             else if(level === 1)
             {
-                this.postProcessing.outputNode = scenePassColor
+                this.postProcessing.outputNode = scenePassColor.add(this.bloomPass)
             }
 
             this.postProcessing.needsUpdate = true
