@@ -1,6 +1,5 @@
 # Akshat Baranwal — Portfolio
-
-> Based on the open-source [`folio-2025`](https://github.com/brunosimon/folio-2025) by [Bruno Simon](https://bruno-simon.com), used under MIT license. The 3D engine, art, and original code are his work; the content (intro, projects, billboards, links) has been adapted to reflect Akshat Baranwal. See `license.md` for the full license and copyright notice.
+The 3D engine, art, and original code are his work; the content (intro, projects, billboards, links) has been adapted to reflect Akshat Baranwal. See `license.md` for the full license and copyright notice.
 
 ## Setup
 
