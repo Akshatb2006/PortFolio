@@ -13,7 +13,12 @@ export class Whispers
     {
         this.game = Game.getInstance()
 
-        this.count = parseInt(import.meta.env.VITE_WHISPERS_COUNT)
+        // Fall back to 30 when VITE_WHISPERS_COUNT is unset or not a number.
+        // Without this, a missing .env makes parseInt(undefined) === NaN, which
+        // flows into the InstancedMesh count below and produces a zero-size GPU
+        // buffer + an invalid drawIndexed instance count every frame (WebGPU crash).
+        const parsedCount = parseInt(import.meta.env.VITE_WHISPERS_COUNT)
+        this.count = Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : 30
 
         this.setSounds()
         this.setFlames()
