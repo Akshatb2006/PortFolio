@@ -4,6 +4,7 @@ import * as M from './CityMap.js'
 import { pbrMaterial, worldUV } from './Assets.js'
 import { makeTextTexture } from './textures.js'
 import { palette as P, noiseTexture, pavingTexture, matte, texMat } from './Palette.js'
+import { createBuckets, mergeBuckets, createRng, blockRng, legacyDraws, typologyFor } from './BuildingKit.js'
 
 const { N, BLOCK, ROAD, SIZE, blockStart, blockCenter, roadCoord, districtOfBlock, addBox, addCircle } = M
 const Y_SLAB = 0.18
@@ -12,7 +13,7 @@ export class City {
   constructor(scene, assets, landmarks, physics, quality, bgCars) {
     this.scene = scene; this.assets = assets; this.physics = physics; this.quality = quality; this.bgCars = bgCars
     this.group = new THREE.Group(); scene.add(this.group)
-    this.rand = M.rng(1337)
+    this.rand = createRng(1337)   // shared stream (same generator as CityMap.rng)
     this.groundCanvas = M.paintGround()
     this.uNight = { value: 0 }
     this.treeSpots = []; this.palmSpots = []; this.neon = []; this.lampPos = []
@@ -170,36 +171,34 @@ export class City {
 
   // ---------------------------------------------------------------- buildings
   buildBlocks() {
-    this.geo = { brick: [], concrete: [], concreteDark: [], concreteWarm: [], glassTower: [], trim: [], roof: [], window: [], awning: [], metal: [], sill: [], shopGlass: [], shopSign: [] }
+    this.geo = createBuckets()
     for (let bx = 0; bx < N; bx++) for (let bz = 0; bz < N; bz++) {
       const d = districtOfBlock(bx, bz)
       if (!d || d.id === 'park' || d.id === 'social') continue
       if (d.id === 'achievements' && bx === 6 && bz === 6) continue
       const x0 = blockStart(bx), z0 = blockStart(bz)
+      // buildings draw from their own per-block generator, never from the shared stream
+      this.brand = blockRng(bx, bz)
       for (const lot of this.lotsFor(d.id, bx, bz)) {
         const lx0 = x0 + lot.x, lz0 = z0 + lot.z, cx = lx0 + lot.w / 2, cz = lz0 + lot.d / 2
-        if (d.id === 'home') this.house(cx, cz, lot.w, lot.d, lot.h)
-        else if (d.id === 'skills') this.garage(cx, cz, lot.w, lot.d, lot.h)
+        const type = typologyFor(d.id, lot, this.brand)
+        if (type === 'legacyHouse') this.house(cx, cz, lot.w, lot.d, lot.h)
+        else if (type === 'legacyGarage') this.garage(cx, cz, lot.w, lot.d, lot.h)
         else this.building(cx, cz, lot.w, lot.d, lot.h, d.id)
         addBox(lx0, lz0, lx0 + lot.w, lz0 + lot.d, lot.h + 2)
       }
+      // keep the shared stream where the original code left it, so later placements are unchanged
+      this.rand.skip(legacyDraws(bx, bz))
       if (d.id === 'home') for (let k = 0; k < 3; k++) this.treeSpots.push([x0 + 4 + this.rand() * (BLOCK - 8), z0 + (k % 2 ? 4.5 : BLOCK - 4.5) + (this.rand() - 0.5)])
     }
-    for (const [k, arr] of Object.entries(this.geo)) {
-      if (!arr.length) continue
-      for (const g of arr) if (!g.attributes.color) this.tint(g, 0xffffff)
-      let geo = mergeGeometries(arr)
-      const mat = this.mat[k]
-      if (mat.userData.tile) geo = worldUV(geo, mat.userData.tile, 'auto')
-      const mesh = new THREE.Mesh(geo, mat); mesh.castShadow = k !== 'window'; mesh.receiveShadow = true
-      this.group.add(mesh)
-    }
+    this.brand = null
+    mergeBuckets(this.geo, this.mat, this.group, worldUV, (g, c) => this.tint(g, c))
     const sd = M.districts.find(d => d.id === 'skills'), sc = M.districtCenter(sd)
     this.addSign(['MOD GARAGE'], sc.x, blockStart(sd.range[1]) + 2.5, 0, { sub: 'SKILLS & TOOLS', w: 20, h: 6, y: 9 })
   }
 
   lotsFor(id, bx, bz) {
-    const r = this.rand, lots = [], pad = 3.2
+    const r = this.brand, lots = [], pad = 3.2
     if (id === 'downtown') {
       const s = (BLOCK - pad * 3) / 2
       for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) lots.push({ x: pad + i * (s + pad), z: pad + j * (s + pad), w: s, d: s, h: 22 + r() * 42 + (bx === 4 && bz === 1 ? 28 : 0) })
@@ -244,8 +243,8 @@ export class City {
           p.rotateY(rot)
           const x = nx ? off + nx * 0.03 : cx + u, z = nz ? off + nz * 0.03 : cz + u
           p.translate(x, y, z)
-          const isLit = this.rand() < lit
-          const col = isLit ? new THREE.Color().setHSL(0.1 + this.rand() * 0.05, 0.7, 0.55 + this.rand() * 0.2) : new THREE.Color(0.02, 0.02, 0.03)
+          const isLit = this.brand() < lit
+          const col = isLit ? new THREE.Color().setHSL(0.1 + this.brand() * 0.05, 0.7, 0.55 + this.brand() * 0.2) : new THREE.Color(0.02, 0.02, 0.03)
           const arr = new Float32Array(p.attributes.position.count * 3)
           for (let i = 0; i < arr.length; i += 3) { arr[i] = col.r; arr[i + 1] = col.g; arr[i + 2] = col.b }
           p.setAttribute('color', new THREE.BufferAttribute(arr, 3))
@@ -255,7 +254,7 @@ export class City {
           const fr = new THREE.BoxGeometry(ww + 0.22, wh + 0.22, 0.1); fr.rotateY(rot); fr.translate(px, y, pz); this.geo.trim.push(fr)
           const sh = new THREE.PlaneGeometry(ww, 0.28); sh.rotateY(rot); sh.translate(nx ? off + nx * 0.04 : cx + u, y + wh / 2 - 0.14, nz ? off + nz * 0.04 : cz + u); this.tint(sh, 0x000000); this.geo.window.push(sh)
           const sill = new THREE.BoxGeometry(ww + 0.4, 0.12, 0.3); sill.rotateY(rot); sill.translate(nx ? off + nx * 0.12 : cx + u, y - wh / 2 - 0.08, nz ? off + nz * 0.12 : cz + u); this.geo.sill.push(sill)
-          if (balcony && fl > 0 && fi === 0 && this.rand() < 0.6) {
+          if (balcony && fl > 0 && fi === 0 && this.brand() < 0.6) {
             const slab = new THREE.BoxGeometry(ww + 1.2, 0.16, 1.1); slab.rotateY(rot); slab.translate(nx ? off + nx * 0.55 : cx + u, y - wh / 2 - 0.1, nz ? off + nz * 0.55 : cz + u); this.geo.sill.push(slab)
             const rail = new THREE.BoxGeometry(ww + 1.2, 1.0, 0.05); rail.rotateY(rot); rail.translate(nx ? off + nx * 1.07 : cx + u, y - wh / 2 + 0.42, nz ? off + nz * 1.07 : cz + u); this.geo.trim.push(rail)
           }
@@ -265,7 +264,7 @@ export class City {
   }
 
   building(cx, cz, w, d, h, district) {
-    const r = this.rand
+    const r = this.brand
     const glass = district === 'downtown' && r() < 0.45
     const wallKey = glass ? 'glassTower' : district === 'career' ? 'brick' : district === 'lab' ? (r() < 0.5 ? 'concrete' : 'concreteWarm') : (r() < 0.5 ? 'concrete' : 'concreteDark')
     let baseH = h, towerH = 0
@@ -310,7 +309,7 @@ export class City {
 
   // ground-floor shops on the +z face: glass band, pilasters, coloured awning, sign from the atlas
   storefront(cx, cz, w, d) {
-    const r = this.rand, zf = cz + d / 2
+    const r = this.brand, zf = cz + d / 2
     const gw = w - 1.2
     const glass = new THREE.PlaneGeometry(gw, 2.4); glass.translate(cx, 0.7 + 1.2, zf + 0.03); this.geo.shopGlass.push(glass)
     const nSeg = Math.max(1, Math.round(gw / 4))
@@ -329,7 +328,7 @@ export class City {
   }
 
   rooftop(cx, cz, w, d, y) {
-    const r = this.rand
+    const r = this.brand
     const n = 1 + Math.floor(r() * 3)
     for (let i = 0; i < n; i++) this.box('metal', cx + (r() - 0.5) * (w - 4), y, cz + (r() - 0.5) * (d - 4), 1.6 + r(), 1 + r() * 0.6, 1.6 + r())
     if (r() < 0.4) { const t = new THREE.CylinderGeometry(1.1, 1.1, 2.4, 12); t.translate(cx + (r() - 0.5) * (w - 5), y + 1.6, cz + (r() - 0.5) * (d - 5)); this.geo.metal.push(t); const legs = new THREE.CylinderGeometry(1.2, 1.2, 0.5, 12); }
@@ -337,7 +336,7 @@ export class City {
   }
 
   house(cx, cz, w, d, h) {
-    const r = this.rand
+    const r = this.brand
     const key = r() < 0.5 ? 'brick' : 'concreteWarm'
     const tintCol = new THREE.Color(P.districts.home[Math.floor(r() * P.districts.home.length)])
     this.box(key, cx, 0, cz, w, h, d, tintCol)
@@ -352,7 +351,7 @@ export class City {
   }
 
   garage(cx, cz, w, d, h) {
-    this.box('concreteDark', cx, 0, cz, w, h, d, P.districts.skills[Math.floor(this.rand() * 3)])
+    this.box('concreteDark', cx, 0, cz, w, h, d, P.districts.skills[Math.floor(this.brand() * 3)])
     this.box('trim', cx, h, cz, w + 0.4, 0.4, d + 0.4)
     const bays = Math.floor(d / 6)
     for (let i = 0; i < bays; i++) { const z = cz - d / 2 + 3 + i * 6; this.box('metal', cx - w / 2 - 0.05, 0.1, z, 0.12, h - 1.2, 4.2); this.box('trim', cx - w / 2 - 0.1, h - 1.1, z, 0.2, 0.3, 4.6) }
