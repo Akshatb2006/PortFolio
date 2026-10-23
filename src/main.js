@@ -20,6 +20,7 @@ import { save } from './game/Save.js'
 import { missions as missionDefs, landmarks, tokens, spawn } from './data/missions.js'
 import { profile } from './data/content.js'
 import { palette as P } from './game/Palette.js'
+import { installDevCapture } from './game/DevCapture.js'
 
 const $ = (s) => document.querySelector(s)
 
@@ -109,6 +110,7 @@ class Game {
     $('#loading').classList.add('hidden')
     this.clock = new THREE.Clock()
     this.setupCinematic()
+    installDevCapture(this)
     this.renderer.setAnimationLoop(() => this.frame())
   }
 
