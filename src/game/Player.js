@@ -12,7 +12,9 @@ export function makeSoldier(gltf, tint = null) {
   model.traverse(o => { if (o.isMesh || o.isSkinnedMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; if (tint) { o.material = o.material.clone(); o.material.color.multiply(tint) } } })
   const mixer = new THREE.AnimationMixer(model)
   const actions = {}
-  for (const clip of gltf.animations) { const a = mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play(); actions[clip.name] = a }
+  for (const clip of gltf.animations) { const a = mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(clip.name === 'Idle' ? 1 : 0); a.play(); actions[clip.name] = a }
+  // evaluate once so the skeleton leaves the bind (T) pose before the first render
+  mixer.update(0)
   return { wrap, inner, mixer, actions }
 }
 

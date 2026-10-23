@@ -3,7 +3,7 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 
-// Loads every external asset once. Textures come from Poly Haven (CC0),
+// Loads every external asset once. HDRI and grass/water textures come from Poly Haven (CC0) / three.js,
 // models from the three.js examples repository (see credits in the menu).
 export async function loadAssets(onProgress) {
   const manager = new THREE.LoadingManager()
@@ -13,17 +13,15 @@ export async function loadAssets(onProgress) {
   const draco = new DRACOLoader(); draco.setDecoderPath('/draco/'); gltf.setDRACOLoader(draco)
   const rgbe = new RGBELoader(manager)
 
-  const pbr = (name, repeat = 1, srgb = true) => {
-    const load = (suffix, color) => { const t = tex.load(`/assets/tex/${name}_${suffix}.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat); t.anisotropy = 8; if (color) t.colorSpace = THREE.SRGBColorSpace; return t }
-    return { map: load('diff', true), normalMap: load('nor', false), aoMap: load('arm', false), roughnessMap: load('arm', false), metalnessMap: load('arm', false) }
+  // Only the outer-terrain grass still uses a photo PBR set (City.buildGround). The packed ARM map is
+  // loaded once and shared by aoMap / roughnessMap (pbrMaterial ignores metalness).
+  const pbr = (name) => {
+    const load = (suffix, color) => { const t = tex.load(`/assets/tex/${name}_${suffix}.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; if (color) t.colorSpace = THREE.SRGBColorSpace; return t }
+    const arm = load('arm', false)
+    return { map: load('diff', true), normalMap: load('nor', false), aoMap: arm, roughnessMap: arm }
   }
   const sets = {
-    asphalt: pbr('asphalt_02'),
-    pavement: pbr('concrete_pavement_02'),
-    brick: pbr('brick_wall_02'),
     grass: pbr('aerial_grass_rock'),
-    sand: pbr('aerial_beach_01'),
-    concrete: pbr('concrete_wall_008'),
   }
   const waterNormals = tex.load('/assets/tex/waternormals.jpg'); waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping
 

@@ -74,5 +74,5 @@ scripts/make-car-lod.mjs   regenerates the decimated background car
 
 - Car: “Ferrari 458 Italia” by vicent091036 (CC-BY), from the three.js examples.
 - Character: “Soldier” (Mixamo), from the three.js examples.
-- Sky HDRI and asphalt / pavement / brick / concrete / grass / sand textures: [Poly Haven](https://polyhaven.com) (CC0).
+- Sky HDRI and the outer-terrain grass texture: [Poly Haven](https://polyhaven.com) (CC0). Water normal map: three.js examples.
 - Everything else (city, buildings, props, UI, audio) is procedural / original.

@@ -12,10 +12,14 @@ export class Pedestrians {
       let bx, bz, d
       do { bx = Math.floor(rnd() * M.N); bz = Math.floor(rnd() * M.N); d = M.districtOfBlock(bx, bz) } while (!d || (d.id === 'achievements' && bx === 6 && bz === 6))
       const s = makeSoldier(assets, new THREE.Color(tints[i % tints.length]))
-      s.mixer.setTime(rnd() * 2)
+      const phase = rnd() * 2
       scene.add(s.wrap)
       const x0 = M.blockStart(bx) - 1.0, z0 = M.blockStart(bz) - 1.0, L = M.BLOCK + 2.0
-      this.peds.push({ ...s, x0, z0, L, t: rnd() * 4 * L, dir: rnd() < 0.5 ? 1 : -1, speed: 1.1 + rnd() * 0.8, pos: new THREE.Vector3(), heading: 0, panic: 0 })
+      const ped = { ...s, x0, z0, L, t: rnd() * 4 * L, dir: rnd() < 0.5 ? 1 : -1, speed: 1.1 + rnd() * 0.8, pos: new THREE.Vector3(), heading: 0, panic: 0 }
+      // start in the walk blend for this pedestrian's speed (dt = 1 snaps the weights), then pose at a random phase
+      blendLocomotion(s.actions, ped.speed, 1)
+      s.mixer.setTime(phase)
+      this.peds.push(ped)
     }
   }
 
