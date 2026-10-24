@@ -51,5 +51,38 @@ export class GameAudio {
   passed() { [523, 659, 784, 1047, 784, 1047].forEach((f, i) => setTimeout(() => this.blip(f, i === 5 ? 0.6 : 0.22, 'triangle', 0.3), i * 130)) }
   failed() { [440, 370, 311, 262].forEach((f, i) => setTimeout(() => this.blip(f, 0.3, 'sawtooth', 0.2), i * 220)) }
   ui() { this.blip(440, 0.05, 'sine', 0.15) }
+  wanted() { [392, 523, 392].forEach((f, i) => setTimeout(() => this.blip(f, 0.16, 'square', 0.2), i * 140)) }
+  // police siren: a wailing oscillator whose loudness follows the nearest pursuing unit (0..1)
+  siren(level) {
+    if (!this.ctx) return
+    if (!this.sirenOsc) {
+      this.sirenOsc = this.ctx.createOscillator(); this.sirenOsc.type = 'sawtooth'; this.sirenOsc.frequency.value = 700
+      const lfo = this.ctx.createOscillator(); lfo.frequency.value = 0.55; const lg = this.ctx.createGain(); lg.gain.value = 260; lfo.connect(lg); lg.connect(this.sirenOsc.frequency); lfo.start()
+      const f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1800
+      this.sirenGain = this.ctx.createGain(); this.sirenGain.gain.value = 0
+      this.sirenOsc.connect(f); f.connect(this.sirenGain); this.sirenGain.connect(this.master); this.sirenOsc.start()
+    }
+    this.sirenGain.gain.setTargetAtTime(level * 0.07, this.ctx.currentTime, 0.2)
+  }
+  // club music (synthesised, no files): kick on every beat, off-beat hats, a simple bassline. One scheduler at a
+  // time; stops and releases when the player leaves the venue.
+  club(on) {
+    if (!this.ctx) return
+    if (!on) { if (this.clubTimer) { clearInterval(this.clubTimer); this.clubTimer = null; this.clubGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1) } return }
+    if (this.clubTimer) return
+    if (!this.clubGain) { this.clubGain = this.ctx.createGain(); this.clubGain.connect(this.master) }
+    this.clubGain.gain.setTargetAtTime(0.9, this.ctx.currentTime, 0.2)
+    const ctx = this.ctx, out = this.clubGain, beat = 60 / 122, bass = [55, 55, 65.4, 49]
+    let next = ctx.currentTime + 0.05, n = 0
+    const noise = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate); const nd = noise.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1
+    const kick = (t) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25); o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.26) }
+    const hat = (t) => { const b = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(); b.buffer = noise; f.type = 'highpass'; f.frequency.value = 7000; g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05); b.connect(f); f.connect(g); g.connect(out); b.start(t) }
+    const bassNote = (t, f) => { const o = ctx.createOscillator(), fl = ctx.createBiquadFilter(), g = ctx.createGain(); o.type = 'sawtooth'; o.frequency.value = f; fl.type = 'lowpass'; fl.frequency.value = 380; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.16, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + beat * 0.45); o.connect(fl); fl.connect(g); g.connect(out); o.start(t); o.stop(t + beat * 0.5) }
+    this.clubTimer = setInterval(() => {
+      while (next < ctx.currentTime + 0.15) { kick(next); hat(next + beat / 2); bassNote(next + beat / 2, bass[Math.floor(n / 4) % 4]); next += beat; n++ }
+    }, 25)
+  }
+  // car alarm: two alternating tones for ~2.5 s
+  alarm() { for (let i = 0; i < 10; i++) setTimeout(() => this.blip(i % 2 ? 740 : 980, 0.22, 'square', 0.14), i * 250) }
   explosion() { if (!this.ctx) return; this.blip(50, 0.9, 'sawtooth', 0.6); this.blip(90, 0.5, 'square', 0.3); setTimeout(() => this.blip(35, 1.2, 'triangle', 0.5), 60) }
 }

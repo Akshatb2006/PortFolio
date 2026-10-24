@@ -7,6 +7,7 @@ export class Input {
     this.handbrake = false
     this.sprint = false
     this.pressed = new Set()         // edge-triggered this frame
+    this.consumed = new Set()        // keys a menu used (close / advance): ignored until released
     this.touch = { x: 0, y: 0, active: false }
     this.enabled = true
     this.isTouch = matchMedia('(pointer: coarse)').matches
@@ -14,12 +15,13 @@ export class Input {
     addEventListener('keydown', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return
       const k = e.key.toLowerCase()
+      if (this.consumed.has(k)) return
       if (!this.keys.has(k)) this.pressed.add(k)
       this.keys.add(k)
       if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault()
     })
-    addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()))
-    addEventListener('blur', () => this.keys.clear())
+    addEventListener('keyup', (e) => { const k = e.key.toLowerCase(); this.keys.delete(k); this.consumed.delete(k) })
+    addEventListener('blur', () => { this.keys.clear(); this.consumed.clear() })
 
     // mouse drag to look
     let dragging = false, lx = 0, ly = 0
@@ -97,5 +99,7 @@ export class Input {
 
   // call at end of frame
   flush() { this.pressed.clear(); this.look.dx = 0; this.look.dy = 0 }
+  // a key handled by a menu must not also act in the game (e.g. E closing a panel re-opening it, or starting a theft)
+  consume(k) { this.pressed.delete(k); this.keys.delete(k); this.consumed.add(k) }
   justPressed(...ks) { return ks.some(k => this.pressed.has(k)) }
 }

@@ -17,11 +17,25 @@ export class Physics {
 
   buildStatic() {
     const R = this.R
-    for (const b of colliders.boxes) {
+    // keep a handle per box so a parked car's box can be removed when the car is stolen
+    this.boxColliders = colliders.boxes.map(b => {
       const hx = (b.x1 - b.x0) / 2, hz = (b.z1 - b.z0) / 2, hy = b.h ? b.h / 2 : 20
-      this.world.createCollider(R.ColliderDesc.cuboid(hx, hy, hz).setTranslation((b.x0 + b.x1) / 2, hy, (b.z0 + b.z1) / 2))
-    }
+      return this.world.createCollider(R.ColliderDesc.cuboid(hx, hy, hz).setTranslation((b.x0 + b.x1) / 2, hy, (b.z0 + b.z1) / 2))
+    })
+    // block slabs: the curb is a 0.18 m step (the player's controller auto-steps up to 0.45 m)
+    for (const s of colliders.slabs) this.world.createCollider(R.ColliderDesc.cuboid((s.x1 - s.x0) / 2, s.h / 2, (s.z1 - s.z0) / 2).setTranslation((s.x0 + s.x1) / 2, s.h / 2, (s.z0 + s.z1) / 2).setFriction(1.1))
     for (const c of colliders.circles) this.world.createCollider(R.ColliderDesc.cylinder(c.h ? c.h / 2 : 6, c.r).setTranslation(c.x, c.h ? c.h / 2 : 6, c.z))
+  }
+
+  // height of the static ground at (x, z): a downward ray, or before the first physics step (when Rapier's query
+  // index does not contain the static colliders yet) the block slab heights straight from the collider data
+  groundAt(x, z, exclude) {
+    const R = this.R
+    const hit = this.world.castRay(new R.Ray({ x, y: 4, z }, { x: 0, y: -1, z: 0 }), 8, true, R.QueryFilterFlags.EXCLUDE_DYNAMIC | R.QueryFilterFlags.EXCLUDE_KINEMATIC | R.QueryFilterFlags.EXCLUDE_SENSORS, undefined, exclude)
+    if (hit) return 4 - (hit.timeOfImpact ?? hit.toi)
+    let y = 0
+    for (const s of colliders.slabs) if (x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) y = Math.max(y, s.h)
+    return y
   }
 
   addProp(mesh, { hx, hy, hz, mass = 20, kind = 'crate', x, y, z, rotY = 0, shape = 'box', r = 0.4 }) {

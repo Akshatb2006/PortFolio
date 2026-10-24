@@ -47,6 +47,18 @@ class Pool {
   }
 }
 
+// irregular blood splat for ground decals (one shared texture)
+function splatTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 128
+  const g = c.getContext('2d')
+  let seed = 7; const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
+  g.fillStyle = '#fff'
+  g.beginPath(); g.arc(64, 64, 34, 0, Math.PI * 2); g.fill()
+  for (let i = 0; i < 14; i++) { const a = r() * Math.PI * 2, d = 26 + r() * 26, s = 6 + r() * 12; g.beginPath(); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, s, 0, Math.PI * 2); g.fill() }
+  for (let i = 0; i < 10; i++) { const a = r() * Math.PI * 2, d = 50 + r() * 10; g.beginPath(); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 2 + r() * 3, 0, Math.PI * 2); g.fill() }
+  const t = new THREE.CanvasTexture(c); return t
+}
+
 export class Effects {
   constructor(scene) {
     this.scene = scene
@@ -57,6 +69,29 @@ export class Effects {
     this.flash = new THREE.PointLight(0xffa040, 0, 40, 2); scene.add(this.flash)
     this.flashT = 0
     this.debris = []
+    // blood: a droplet burst (particles) and ground pools (a fixed set of decals reused oldest-first)
+    this.bloodDrops = new Pool(scene, 240, { color: 0x7a0606, size: 0.16, gravity: -9.8, drag: 0.985 })
+    const splat = splatTexture()
+    this.pools = Array.from({ length: 16 }, () => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x4a0303, roughness: 0.25, metalness: 0.1, alphaMap: splat, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }))
+      // kept visible but parked far underground when unused, so the boot-time shader precompile covers it
+      m.position.y = -500; m.renderOrder = 1; m.receiveShadow = true; scene.add(m)
+      return { m, age: 0, size: 1, life: 0 }
+    })
+    this.poolNext = 0
+  }
+
+  // a short spray of droplets in the direction of the hit (dx, dz), amount 0..1
+  blood(x, y, z, dx = 0, dz = 0, amount = 0.5) {
+    const n = Math.round(10 + amount * 30)
+    for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = 0.6 + Math.random() * 2.2 * (0.5 + amount); this.bloodDrops.emit(x, y, z, dx * (1 + Math.random() * 2) + Math.cos(a) * s, 0.8 + Math.random() * 2.5, dz * (1 + Math.random() * 2) + Math.sin(a) * s, 0.45 + Math.random() * 0.4, 0.1 + Math.random() * 0.12, 0.7 + Math.random() * 0.3) }
+  }
+
+  // a pool that spreads on the ground under a body and fades after a while
+  bloodPool(x, y, z, size = 1.6, life = 45) {
+    const p = this.pools[this.poolNext]; this.poolNext = (this.poolNext + 1) % this.pools.length
+    p.m.position.set(x, y + 0.025, z); p.m.rotation.y = Math.random() * Math.PI * 2
+    p.size = size; p.age = 0; p.life = life; p.m.scale.setScalar(0.01); p.m.material.opacity = 0.92
   }
 
   explosion(x, y, z) {
@@ -76,8 +111,15 @@ export class Effects {
   }
 
   update(dt) {
-    this.fire.update(dt); this.smoke.update(dt); this.sparks.update(dt); this.tyre.update(dt)
+    this.fire.update(dt); this.smoke.update(dt); this.sparks.update(dt); this.tyre.update(dt); this.bloodDrops.update(dt)
+    for (const p of this.pools) {
+      if (p.age >= p.life) continue
+      p.age += dt
+      p.m.scale.setScalar(p.size * Math.min(1, 0.25 + p.age / 2.5))                       // spreads over ~2 s
+      const fade = p.life - p.age; if (fade < 5) p.m.material.opacity = Math.max(0, fade / 5) * 0.92
+      if (p.age >= p.life) p.m.position.y = -500
+    }
     if (this.flashT > 0) { this.flashT -= dt; this.flash.intensity = Math.max(0, 800 * this.flashT / 0.35) } else this.flash.intensity = 0
   }
-  resize() { const s = innerHeight / 2; for (const p of [this.fire, this.smoke, this.sparks, this.tyre]) p.mat.uniforms.uScale.value = s }
+  resize() { const s = innerHeight / 2; for (const p of [this.fire, this.smoke, this.sparks, this.tyre, this.bloodDrops]) p.mat.uniforms.uScale.value = s }
 }

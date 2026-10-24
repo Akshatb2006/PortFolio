@@ -34,8 +34,10 @@ const GradeShader = {
 
 export function createPostfx(renderer, scene, camera, quality) {
   const size = renderer.getSize(new THREE.Vector2())
-  const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 0 })
-  const composer = new EffectComposer(renderer, rt)
+  // Let the composer create its own HalfFloat targets: it sizes them at CSS size × renderer pixel ratio.
+  // (Passing a target built from renderer.getSize() made the whole frame render at CSS resolution and get
+  // stretched onto the larger canvas until the first resize event.)
+  const composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, camera))
   const gtao = null
   let bloom = null
@@ -47,7 +49,9 @@ export function createPostfx(renderer, scene, camera, quality) {
   if (quality !== 'low') { smaa = new SMAAPass(); composer.addPass(smaa) }
   return {
     composer, grade, bloom, gtao,
-    resize(w, h) { composer.setSize(w, h); gtao && gtao.setSize(w, h); smaa && smaa.setSize(w, h) },
+    // The composer stores the pixel ratio it was created with; keep it in step with the renderer, then let it
+    // size every pass (bloom, grade, SMAA) in device pixels. SMAA must not be resized separately in CSS pixels.
+    resize(w, h, pixelRatio) { composer.setPixelRatio(pixelRatio); composer.setSize(w, h) },
     render(dt, night) { grade.uniforms.uTime.value += dt; grade.uniforms.uNight.value = night; composer.render() },
   }
 }

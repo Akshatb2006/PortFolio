@@ -1,12 +1,16 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { prepareCar } from './CarModel.js'
+import { instancedModel } from './KenneyCars.js'
 
-// All background cars (parked + traffic) in ONE InstancedMesh built from the decimated LOD.
-// Vertex colours carry each part's base colour; the paintMask attribute selects which
-// vertices take the per-instance colour.
+// Background cars. Traffic uses ONE InstancedMesh built from the decimated Ferrari LOD (vertex colours carry
+// each part's base colour; paintMask selects the vertices that take the per-instance colour). Parked cars use
+// Kenney Car Kit models (`type`): one InstancedMesh per model, created in finalize() once every car is known.
+// Indices returned by alloc() are stable handles for set() / hide() whichever mesh holds the car.
 export class BgCars {
-  constructor(scene, lodScene, capacity = 64) {
+  constructor(scene, lodScene, capacity = 64, kenney = null) {
+    this.scene = scene; this.kenney = kenney
+    this.slots = []          // handle -> { mesh, i } (Kenney slots get their mesh in finalize)
     const prep = prepareCar(lodScene)
     prep.wrap.updateMatrixWorld(true)
     const geos = []
@@ -49,18 +53,46 @@ export class BgCars {
     scene.add(this.mesh)
   }
 
-  finalize() { this.mesh.count = Math.max(1, this.count) }
+  finalize() {
+    this.mesh.count = Math.max(1, this.count)
+    // one InstancedMesh per Kenney model, sized to the cars that use it
+    const byType = {}
+    for (const s of this.slots) if (s.type) (byType[s.type] ??= []).push(s)
+    this.kenneyMeshes = []
+    for (const [type, list] of Object.entries(byType)) {
+      const { geometry, material } = instancedModel(this.kenney, type)
+      const mesh = new THREE.InstancedMesh(geometry, material, list.length)
+      const paint = new Float32Array(list.length * 3)
+      list.forEach((s, i) => { s.mesh = mesh; s.i = i; mesh.setMatrixAt(i, s.matrix); s.color.toArray(paint, i * 3) })
+      // per-instance paint colour (a custom attribute: three's instanceColor would tint the whole car)
+      geometry.setAttribute('iPaint', new THREE.InstancedBufferAttribute(paint, 3))
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false
+      mesh.name = 'parked-' + type
+      this.scene.add(mesh); this.kenneyMeshes.push(mesh)
+    }
+  }
 
-  alloc(color) {
+  // type: a Kenney model name (parked cars) or undefined for the Ferrari LOD (traffic)
+  alloc(color, type) {
+    if (type && this.kenney?.[type]) {
+      this.slots.push({ type, color: new THREE.Color(color), matrix: new THREE.Matrix4().makeScale(0, 0, 0), mesh: null, i: -1 })
+      return this.slots.length - 1
+    }
     if (this.count >= this.capacity) return -1
     const i = this.count++
     this.mesh.setColorAt(i, new THREE.Color(color)); this.mesh.instanceColor.needsUpdate = true
-    return i
+    this.slots.push({ mesh: this.mesh, i })
+    return this.slots.length - 1
   }
 
-  set(i, x, y, z, heading) {
-    if (i < 0) return
-    const m = new THREE.Matrix4().makeRotationY(heading).setPosition(x, y, z)
-    this.mesh.setMatrixAt(i, m); this.mesh.instanceMatrix.needsUpdate = true
+  write(k, m) {
+    const s = this.slots[k]; if (!s) return
+    if (s.matrix) s.matrix.copy(m)
+    if (s.mesh) { s.mesh.setMatrixAt(s.i, m); s.mesh.instanceMatrix.needsUpdate = true }
   }
+
+  hide(k) { if (k >= 0) this.write(k, new THREE.Matrix4().makeScale(0, 0, 0)) }
+
+  set(k, x, y, z, heading) { if (k >= 0) this.write(k, new THREE.Matrix4().makeRotationY(heading).setPosition(x, y, z)) }
 }

@@ -46,7 +46,9 @@ export const WATER = { x0: blockStart(2), x1: blockStart(4) + BLOCK, z0: blockSt
 
 // ---------------------------------------------------------------------------
 // Colliders. Buildings are AABBs; trees/pillars are circles.
-export const colliders = { boxes: [], circles: [] }
+export const colliders = { boxes: [], circles: [], slabs: [] }
+// Walkable block slabs (sidewalk rings, plazas, lawns, sand): low boxes from the ground up to height h.
+export function addSlab(x0, z0, x1, z1, h) { colliders.slabs.push({ x0, z0, x1, z1, h }) }
 export function addBox(x0, z0, x1, z1, h = 0) { colliders.boxes.push({ x0, z0, x1, z1, h }) }
 export function addCircle(x, z, r, h = 0) { colliders.circles.push({ x, z, r, h }) }
 

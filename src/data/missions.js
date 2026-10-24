@@ -1,7 +1,7 @@
 // Mission definitions + world landmarks. Positions are derived from the city
 // grid so they always land on roads / open ground.
 import * as M from '../game/CityMap.js'
-import { projects, experience, lab, skills, socials, achievements } from './content.js'
+import { projects, experience, lab, skills, verifiedSocials as socials, achievements } from './content.js'
 
 const { blockStart, blockCenter, roadCoord, BLOCK, ROAD, WATER } = M
 const pierX = blockCenter(3)
@@ -130,7 +130,7 @@ export const missions = [
       'Sunset Pier. Cars can’t get past the bollards, so leave it here and walk.',
       'Every signpost on the pier is a place you can find me online. Read them all.',
     ],
-    objective: 'Walk the pier and read all <strong>6 signposts</strong>. (Press E near the car to get out.)',
+    objective: `Walk the pier and read all <strong>${socials.length} signposts</strong>. (Press E near the car to get out.)`,
     type: 'collect', onFoot: true,
     points: socials.map((s, i) => ({ x: pierX + (i % 2 ? 1.6 : -1.6), z: WATER.z0 + 1 + Math.floor(i / 2) * 6, label: s.name, radius: 1.6, card: { type: 'social', id: s.id } })),
     passedText: 'SOCIALS UNLOCKED',

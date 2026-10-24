@@ -43,6 +43,7 @@ export class CameraRig {
       target.pos.y + height + dist * Math.sin(this.pitch),
       target.pos.z - Math.cos(h) * dist * Math.cos(this.pitch))
     const k = Math.min(1, dt * (target.isCar ? 5 : 8))
+    if (this.collide) desired.copy(this.collide(new THREE.Vector3(target.pos.x, target.pos.y + 1.5, target.pos.z), desired))
     if (this.pos.lengthSq() === 0) this.pos.copy(desired)
     this.pos.lerp(desired, k)
     const lookAt = new THREE.Vector3(target.pos.x, target.pos.y + (target.isCar ? 1.2 : 1.4), target.pos.z)

@@ -1,13 +1,21 @@
 import * as THREE from 'three'
+import { PARKED_TYPES } from './KenneyCars.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import * as M from './CityMap.js'
 import { pbrMaterial, worldUV } from './Assets.js'
 import { makeTextTexture } from './textures.js'
 import { palette as P, noiseTexture, pavingTexture, matte, texMat } from './Palette.js'
-import { createBuckets, mergeBuckets, createRng, blockRng, legacyDraws, typologyFor } from './BuildingKit.js'
+import { BENCHMARK, buildBenchmark } from './Benchmark.js'
+import { buildVillage } from './Village.js'
+import { buildScenery } from './Scenery.js'
+import { buildLandmarks as buildScenicLandmarks } from './Landmarks.js'
+import { SHOWCASE, makeShowcaseMaterials, showcaseNight, buildShowcaseLot, buildShowcaseStreet } from './Showcase.js'
+import { createBuckets, mergeBuckets, createRng, blockRng, legacyDraws, typologyFor, buildDowntown, DOWNTOWN_LANDMARKS, WALL_BUCKETS, wallBox } from './BuildingKit.js'
 
 const { N, BLOCK, ROAD, SIZE, blockStart, blockCenter, roadCoord, districtOfBlock, addBox, addCircle } = M
 const Y_SLAB = 0.18
+
+const SHARED_STREAM_GUARD = () => { throw new Error('Building generation must not use the shared world-placement stream') }
 
 export class City {
   constructor(scene, assets, landmarks, physics, quality, bgCars) {
@@ -22,6 +30,7 @@ export class City {
     this.buildBlocks()
     this.buildPark()
     this.buildBeach()
+    if (this.scenery) this.landmarks = buildScenicLandmarks(this.scene, this.assets)   // waterfalls, temple, Aurora Point
     this.buildStadium()
     this.buildLandmarks(landmarks)
     this.buildBoundary()
@@ -39,18 +48,19 @@ export class City {
     this.mat = {
       asphalt: texMat(asphaltTex, 9, { roughness: 0.9 }),
       pavement: texMat(pavingTexture(P.pavement, P.pavementLine), 4),
-      grass: texMat(grassTex, 6),
+      // lawns: the photo grass set (Poly Haven, already shipped for the outer terrain), tinted to a lawn green
+      grass: this.assets?.sets?.grass ? pbrMaterial(this.assets.sets.grass, { tile: 5, color: 0x9fbf6a }) : texMat(grassTex, 6),
       sand: texMat(sandTex, 6),
       brick: texMat(wallTex, 4, { vertexColors: true }),
       concrete: texMat(wallTex, 4, { vertexColors: true }),
       concreteDark: texMat(wallTex, 4, { vertexColors: true }),
       concreteWarm: texMat(wallTex, 4, { vertexColors: true }),
       trim: matte(P.trim, { roughness: 0.7 }),
-      metal: matte(P.metal, { roughness: 0.5, metalness: 0.3 }),
+      metal: matte(P.metal, { roughness: 0.5, metalness: 0.3, vertexColors: true }),
       line: matte(P.laneWhite, { roughness: 0.8 }),
       lineYellow: matte(P.laneYellow, { roughness: 0.8 }),
-      glassTower: new THREE.MeshStandardMaterial({ color: P.glassTower, roughness: 0.25, metalness: 0.55, envMapIntensity: 0.9 }),
-      roof: matte(P.roof),
+      glassTower: new THREE.MeshStandardMaterial({ color: P.glassTower, roughness: 0.25, metalness: 0.55, envMapIntensity: 0.9, vertexColors: true }),
+      roof: matte(P.roof, { vertexColors: true }),
       awning: matte('#ffffff', { vertexColors: true, side: THREE.DoubleSide }),
       leaf: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 }),
       bark: matte(P.bark),
@@ -58,7 +68,7 @@ export class City {
       crate: matte('#d9a35a'),
       barrel: matte('#c9382c', { roughness: 0.5, metalness: 0.2 }),
       cone: matte('#ff7a1f'),
-      sill: matte(P.sill),
+      sill: matte(P.sill, { vertexColors: true }),
       shopGlass: new THREE.MeshStandardMaterial({ color: '#7fb3d6', roughness: 0.15, metalness: 0.4, envMapIntensity: 0.8, transparent: true, opacity: 0.9 }),
     }
     this.signAtlas = this.makeSignAtlas()
@@ -73,6 +83,7 @@ export class City {
         .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance = vColor * uNight * 1.5;')
     }
     this.mat.window = win
+    Object.assign(this.mat, makeShowcaseMaterials())
   }
 
   makeSignAtlas() {
@@ -120,18 +131,24 @@ export class City {
     wl.receiveShadow = yl.receiveShadow = true; g.add(wl, yl)
 
     // block slabs: sidewalk ring + interior fill
-    const byMat = { pavement: [], grass: [], sand: [] }
+    const byMat = { pavement: [], grass: [], sand: [], cobble: [] }
+    // Grove Street village: cobbled sidewalks from the Medieval kit's uneven-stone material (2 m tiles)
+    const kitStone = (() => { let f = null; this.assets?.kit?.village?.scene && this.assets.kit.village.scenes.forEach(sc => sc.traverse(o => { if (!f && o.isMesh && o.material.name === 'MI_UnevenBrick') f = o.material })); return f })()
+    if (kitStone) { m.cobble = kitStone.clone(); m.cobble.color.set(0xd8cfc0); m.cobble.userData.tile = 2; for (const t of [m.cobble.map, m.cobble.normalMap, m.cobble.roughnessMap]) if (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8 } }
     const stadiumSkip = (bx, bz) => bx === 6 && bz === 6
     for (let bx = 0; bx < N; bx++) for (let bz = 0; bz < N; bz++) {
       const d = districtOfBlock(bx, bz); if (!d) continue
       const x0 = blockStart(bx), z0 = blockStart(bz)
+      // the slab is also solid, so people and cars stand on the sidewalk instead of 18 cm inside it
+      M.addSlab(x0, z0, x0 + BLOCK, z0 + BLOCK, Y_SLAB)
       const inner = d.id === 'home' || d.id === 'park' ? 'grass' : d.id === 'social' ? 'sand' : 'pavement'
       const ring = 2.6
       const box = (x, z, w, dd, mat) => { const b = new THREE.BoxGeometry(w, Y_SLAB, dd); b.translate(x, Y_SLAB / 2, z); byMat[mat].push(b) }
       if (inner === 'pavement') box(x0 + BLOCK / 2, z0 + BLOCK / 2, BLOCK, BLOCK, 'pavement')
       else {
-        box(x0 + BLOCK / 2, z0 + ring / 2, BLOCK, ring, 'pavement'); box(x0 + BLOCK / 2, z0 + BLOCK - ring / 2, BLOCK, ring, 'pavement')
-        box(x0 + ring / 2, z0 + BLOCK / 2, ring, BLOCK - 2 * ring, 'pavement'); box(x0 + BLOCK - ring / 2, z0 + BLOCK / 2, ring, BLOCK - 2 * ring, 'pavement')
+        const walk = d.id === 'home' && m.cobble ? 'cobble' : 'pavement'
+        box(x0 + BLOCK / 2, z0 + ring / 2, BLOCK, ring, walk); box(x0 + BLOCK / 2, z0 + BLOCK - ring / 2, BLOCK, ring, walk)
+        box(x0 + ring / 2, z0 + BLOCK / 2, ring, BLOCK - 2 * ring, walk); box(x0 + BLOCK - ring / 2, z0 + BLOCK / 2, ring, BLOCK - 2 * ring, walk)
         box(x0 + BLOCK / 2, z0 + BLOCK / 2, BLOCK - 2 * ring, BLOCK - 2 * ring, inner)
         if (d.id === 'social' && stadiumSkip(bx, bz)) {}
       }
@@ -146,9 +163,12 @@ export class City {
     const paths = [new THREE.BoxGeometry(4 * BLOCK + 3 * ROAD - 4, 0.05, 3.5).translate(pc.x, Y_SLAB + 0.02, pc.z), new THREE.BoxGeometry(3.5, 0.05, 2 * BLOCK + ROAD - 4).translate(pc.x, Y_SLAB + 0.02, pc.z)]
     const pm = new THREE.Mesh(worldUV(mergeGeometries(paths), 3, 'auto'), this.mat.pavement); pm.receiveShadow = true; g.add(pm)
 
-    // outer terrain + mountains
+    // outer terrain + mountains. With the scenic ring (Scenery.js) the heightfield replaces both; the old cone loop
+    // still runs below (without adding its mesh) so the shared random stream, and the rest of the world, is unchanged
+    const scenic = !!this.assets?.sets?.rockAerial
+    if (scenic) this.scenery = buildScenery(this, this.assets)
     const outer = new THREE.Mesh(worldUV(new THREE.PlaneGeometry(SIZE * 5, SIZE * 5).rotateX(-Math.PI / 2), 12), pbrMaterial(this.assets.sets.grass, { tile: 14, color: 0xb8b890 }))
-    outer.position.y = -0.05; outer.receiveShadow = true; g.add(outer)
+    outer.position.y = -0.05; outer.receiveShadow = true; if (!scenic) g.add(outer)
     const mtnMat = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true, vertexColors: true })
     const mtnGeo = new THREE.ConeGeometry(1, 1, 11, 4)
     { const uv = mtnGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 24, uv.getY(i) * 10)
@@ -166,33 +186,73 @@ export class City {
       mm.compose(new THREE.Vector3(x, h / 2 - 3, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.rand() * 6), new THREE.Vector3(r, h, r * (0.7 + this.rand() * 0.6)))
       mtn.setMatrixAt(i, mm)
     }
-    g.add(mtn)
+    if (!scenic) g.add(mtn)
   }
 
   // ---------------------------------------------------------------- buildings
   buildBlocks() {
     this.geo = createBuckets()
+    const benchLots = [], villageLots = []
     for (let bx = 0; bx < N; bx++) for (let bz = 0; bz < N; bz++) {
       const d = districtOfBlock(bx, bz)
       if (!d || d.id === 'park' || d.id === 'social') continue
       if (d.id === 'achievements' && bx === 6 && bz === 6) continue
       const x0 = blockStart(bx), z0 = blockStart(bz)
-      // buildings draw from their own per-block generator, never from the shared stream
+      // buildings draw from their own per-block generator. The shared stream is swapped for a
+      // tripwire while they run, so any accidental use fails loudly instead of moving the trees.
       this.brand = blockRng(bx, bz)
-      for (const lot of this.lotsFor(d.id, bx, bz)) {
+      const shared = this.rand
+      this.rand = SHARED_STREAM_GUARD
+      const lots = this.lotsFor(d.id, bx, bz)
+      const landmark = d.id === 'downtown' && DOWNTOWN_LANDMARKS[bx + ',' + bz]
+      const tallest = landmark ? lots.reduce((a, l, i) => (l.h > lots[a].h ? i : a), 0) : -1
+      const showLots = {}
+      const bench = !!this.assets?.kit && bx === BENCHMARK.bx && bz === BENCHMARK.bz
+      lots.forEach((lot, i) => {
         const lx0 = x0 + lot.x, lz0 = z0 + lot.z, cx = lx0 + lot.w / 2, cz = lz0 + lot.d / 2
-        const type = typologyFor(d.id, lot, this.brand)
-        if (type === 'legacyHouse') this.house(cx, cz, lot.w, lot.d, lot.h)
+        const type = typologyFor(d.id, lot, this.brand, { landmark: i === tallest ? landmark : null })
+        if (type === 'legacyHouse' && this.assets?.kit?.village) {
+          // Grove Street village (Village.js): the old house still runs into a throwaway bucket so it consumes the
+          // same random draws; footprint and collider unchanged
+          const keep = this.geo; this.geo = createBuckets(); this.house(cx, cz, lot.w, lot.d, lot.h); this.geo = keep
+          villageLots.push({ x0: lx0, z0: lz0, w: lot.w, d: lot.d, h: lot.h, rx: lot.x + lot.w / 2, rz: lot.z + lot.d / 2 })
+        } else if (type === 'legacyHouse') this.house(cx, cz, lot.w, lot.d, lot.h)
         else if (type === 'legacyGarage') this.garage(cx, cz, lot.w, lot.d, lot.h)
-        else this.building(cx, cz, lot.w, lot.d, lot.h, d.id)
+        else if (type === 'legacyBuilding') this.building(cx, cz, lot.w, lot.d, lot.h, d.id)
+        else {
+          // street faces: 0 +z, 1 -z, 2 +x, 3 -x (the sides of the lot that touch the block edge)
+          const streets = [lot.z + lot.d / 2 > BLOCK / 2 ? 0 : 1, lot.x + lot.w / 2 > BLOCK / 2 ? 2 : 3]
+          const showcase = bx === SHOWCASE.bx && bz === SHOWCASE.bz && lot.z + lot.d / 2 > BLOCK / 2
+          if (showcase) {
+            // Run the original typology into a throwaway bucket set so it consumes exactly the same random
+            // draws as before: the block's other lots stay identical. Then build the showcase building.
+            const keep = this.geo; this.geo = createBuckets()
+            buildDowntown(this, type, { m: { cx, cz, w: lot.w, d: lot.d }, h: lot.h, streets })
+            this.geo = keep
+            const rect = { x0: lx0, z0: lz0, x1: lx0 + lot.w, z1: lz0 + lot.d }
+            showLots[lot.x < BLOCK / 2 ? 'A' : 'B'] = rect
+            buildShowcaseLot(this, lot.x < BLOCK / 2 ? 'A' : 'B', rect)
+          } else if (bench) {
+            // benchmark block: the original typology runs into a throwaway bucket set (same random draws);
+            // the lot is drawn by Benchmark.js from kit modules instead. Footprint and collider unchanged.
+            const keep = this.geo; this.geo = createBuckets()
+            buildDowntown(this, type, { m: { cx, cz, w: lot.w, d: lot.d }, h: lot.h, streets })
+            this.geo = keep
+            benchLots.push({ x0: lx0, z0: lz0, w: lot.w, d: lot.d, h: lot.h, rx: lot.x + lot.w / 2, rz: lot.z + lot.d / 2 })
+          } else buildDowntown(this, type, { m: { cx, cz, w: lot.w, d: lot.d }, h: lot.h, streets })
+        }
         addBox(lx0, lz0, lx0 + lot.w, lz0 + lot.d, lot.h + 2)
-      }
+      })
+      if (showLots.A && showLots.B) buildShowcaseStreet(this, { x0, z0, size: BLOCK }, showLots, Y_SLAB)
+      this.rand = shared
       // keep the shared stream where the original code left it, so later placements are unchanged
       this.rand.skip(legacyDraws(bx, bz))
       if (d.id === 'home') for (let k = 0; k < 3; k++) this.treeSpots.push([x0 + 4 + this.rand() * (BLOCK - 8), z0 + (k % 2 ? 4.5 : BLOCK - 4.5) + (this.rand() - 0.5)])
     }
     this.brand = null
     mergeBuckets(this.geo, this.mat, this.group, worldUV, (g, c) => this.tint(g, c))
+    if (benchLots.length) this.bench = buildBenchmark(this.scene, this.assets, benchLots)
+    if (villageLots.length) this.village = buildVillage(this.scene, this.assets, villageLots)
     const sd = M.districts.find(d => d.id === 'skills'), sc = M.districtCenter(sd)
     this.addSign(['MOD GARAGE'], sc.x, blockStart(sd.range[1]) + 2.5, 0, { sub: 'SKILLS & TOOLS', w: 20, h: 6, y: 9 })
   }
@@ -225,7 +285,7 @@ export class City {
     for (let i = 0; i < arr.length; i += 3) { arr[i] = c.r; arr[i + 1] = c.g; arr[i + 2] = c.b }
     g.setAttribute('color', new THREE.BufferAttribute(arr, 3)); return g
   }
-  box(key, cx, y, cz, w, h, d, color) { const g = new THREE.BoxGeometry(w, h, d); g.translate(cx, y + h / 2, cz); this.tint(g, color); this.geo[key].push(g); return g }
+  box(key, cx, y, cz, w, h, d, color) { const g = WALL_BUCKETS.has(key) ? wallBox(w, h, d) : new THREE.BoxGeometry(w, h, d); g.translate(cx, y + h / 2, cz); this.tint(g, color); this.geo[key].push(g); return g }
 
   // windows on 4 faces of a box footprint
   windows(cx, cz, w, d, y0, y1, { floorH = 3.2, spacing = 2.7, ww = 1.5, wh = 1.9, lit = 0.45, skipFaces = [], balcony = false } = {}) {
@@ -249,10 +309,23 @@ export class City {
           for (let i = 0; i < arr.length; i += 3) { arr[i] = col.r; arr[i + 1] = col.g; arr[i + 2] = col.b }
           p.setAttribute('color', new THREE.BufferAttribute(arr, 3))
           this.geo.window.push(p)
-          // frame, top shadow strip and sill give the window depth
-          const px = nx ? off + nx * 0.02 : cx + u, pz = nz ? off + nz * 0.02 : cz + u
+          // frame and sill give the window depth. The 0.1 m-deep frame is centred
+          // 4 cm inside the wall so its front face (+0.01) stays behind the glass (+0.03); only its
+          // 0.11 m border shows. (Previously its front face at +0.07 covered the glass entirely.)
+          const px = nx ? off - nx * 0.04 : cx + u, pz = nz ? off - nz * 0.04 : cz + u
           const fr = new THREE.BoxGeometry(ww + 0.22, wh + 0.22, 0.1); fr.rotateY(rot); fr.translate(px, y, pz); this.geo.trim.push(fr)
-          const sh = new THREE.PlaneGeometry(ww, 0.28); sh.rotateY(rot); sh.translate(nx ? off + nx * 0.04 : cx + u, y + wh / 2 - 0.14, nz ? off + nz * 0.04 : cz + u); this.tint(sh, 0x000000); this.geo.window.push(sh)
+          // pale blinds or curtains on 55 % of unlit windows. Chosen by a hash of the window position,
+          // not by this.brand, so the building's own random sequence (colours, roofs, lit pattern) is unchanged.
+          if (!isLit) {
+            const hx = nx ? off : cx + u, hz = nz ? off : cz + u
+            const hsh = (k) => { const v = Math.sin(hx * 12.9898 + y * 78.233 + hz * 37.719 + k * 4.581) * 43758.5453; return v - Math.floor(v) }
+            if (hsh(0) < 0.55) {
+              const shade = ['#efe7d8', '#e4dccb', '#f4efe6', '#e9d9c4'][Math.floor(hsh(1) * 4)]
+              const at = (g, ox, oy) => { g.rotateY(rot); g.translate((nx ? off + nx * 0.04 : cx + u) + (nx ? 0 : ox), y + oy, (nz ? off + nz * 0.04 : cz + u) + (nz ? 0 : (nx > 0 ? -ox : ox))); this.tint(g, shade); this.geo.sill.push(g) }
+              if (hsh(2) < 0.65) { const bh = wh * (0.25 + hsh(3) * 0.45); at(new THREE.PlaneGeometry(ww - 0.08, bh), 0, wh / 2 - bh / 2) }
+              else { const cw = ww * 0.28; at(new THREE.PlaneGeometry(cw, wh - 0.08), -(ww - cw) / 2 + 0.04, 0); at(new THREE.PlaneGeometry(cw, wh - 0.08), (ww - cw) / 2 - 0.04, 0) }
+            }
+          }
           const sill = new THREE.BoxGeometry(ww + 0.4, 0.12, 0.3); sill.rotateY(rot); sill.translate(nx ? off + nx * 0.12 : cx + u, y - wh / 2 - 0.08, nz ? off + nz * 0.12 : cz + u); this.geo.sill.push(sill)
           if (balcony && fl > 0 && fi === 0 && this.brand() < 0.6) {
             const slab = new THREE.BoxGeometry(ww + 1.2, 0.16, 1.1); slab.rotateY(rot); slab.translate(nx ? off + nx * 0.55 : cx + u, y - wh / 2 - 0.1, nz ? off + nz * 0.55 : cz + u); this.geo.sill.push(slab)
@@ -391,6 +464,7 @@ export class City {
     addCircle(pierX - 2.3, W.z0 - 2.5, 0.45, 1.2); addCircle(pierX + 2.3, W.z0 - 2.5, 0.45, 1.2)
     // water surface slightly below the slab, with sand slope
     this.sea = this.makeWater((W.x0 + W.x1) / 2, Y_SLAB - 0.12, (W.z0 + W.z1) / 2 + 40, W.x1 - W.x0 + 60, W.z1 - W.z0 + 80, false)
+    if (this.scenery) this.sea.visible = false   // the scenic sea (same level) takes over; avoids two overlapping water planes
     for (const bx of [pierX - 2.3, pierX + 2.3]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 1.2, 10), this.mat.metal); b.position.set(bx, 0.6 + Y_SLAB, W.z0 - 2.5); b.castShadow = true; this.group.add(b) }
     // wooden pier deck + rails
     const wood = new THREE.MeshStandardMaterial({ color: 0x7a4f2a, roughness: 0.85 })
@@ -569,11 +643,21 @@ export class City {
       else spots.push([roadCoord(i) + side * (ROAD / 2 - 1.5), blockStart(j) + BLOCK * t, side > 0 ? Math.PI : 0])
     }
     const colors = [0x3a6fd1, 0xe8e2d0, 0x2d2d2d, 0xd9a441, 0x7a3fa8, 0x3aa06a, 0xc4c4c4, 0x8b2222, 0x1c1c1c, 0xf0f0f0]
-    for (const [x, z, rot] of spots.slice(0, 30)) {
-      const i = this.bgCars.alloc(colors[Math.floor(r() * colors.length)])
+    // parked cars are recorded so they can be stolen (VehicleSystem): instance, pose, colour and collider box
+    this.parked = []
+    // models (Kenney sedan / SUV / van) cycle by index so the random stream, and with it the rest of the world, is unchanged
+    const lib = this.bgCars.kenney
+    spots.slice(0, 30).forEach(([x, z, rot], n) => {
+      const color = colors[Math.floor(r() * colors.length)]
+      const type = lib ? PARKED_TYPES[n % PARKED_TYPES.length] : undefined
+      const i = this.bgCars.alloc(color, type)
       this.bgCars.set(i, x, 0, z, rot)
-      if (Math.abs(Math.abs(rot) - Math.PI / 2) < 0.1) addBox(x - 2.3, z - 1.1, x + 2.3, z + 1.1, 1.4); else addBox(x - 1.1, z - 2.3, x + 1.1, z + 2.3, 1.4)
-    }
+      const box = M.colliders.boxes.length
+      // collider from the model's real footprint (the Ferrari LOD fallback keeps the old 4.6 × 2.2 m box)
+      const hl = type ? lib[type].half.z + 0.05 : 2.3, hw = type ? lib[type].half.x + 0.05 : 1.1, h = type ? lib[type].half.y : 1.4
+      if (Math.abs(Math.abs(rot) - Math.PI / 2) < 0.1) addBox(x - hl, z - hw, x + hl, z + hw, h); else addBox(x - hw, z - hl, x + hw, z + hl, h)
+      this.parked.push({ inst: i, x, z, rot, color, type, box, taken: false })
+    })
   }
 
   // ---------------------------------------------------------------- dynamic props (physics)
@@ -606,7 +690,7 @@ export class City {
     barrel(blockStart(7) + 26, blockStart(5) + 6); barrel(blockStart(7) + 27.2, blockStart(5) + 6.8)
   }
 
-  update(dt) { if (this.waters) for (const w of this.waters) { w.userData.n.offset.x += dt * w.userData.speed; w.userData.n.offset.y += dt * w.userData.speed * 0.7 } }
+  update(dt) { if (this.waters) for (const w of this.waters) { w.userData.n.offset.x += dt * w.userData.speed; w.userData.n.offset.y += dt * w.userData.speed * 0.7 } this.landmarks?.update(dt) }
 
   setNight(n) {
     this.uNight.value = n
@@ -615,5 +699,10 @@ export class City {
     if (this.poolMat) this.poolMat.opacity = Math.max(0, (n - 0.3) / 0.7)
     for (const s of this.neon) if (s.material) s.material.emissiveIntensity = n * 1.1
     for (const m of this.neonMats || []) m.emissiveIntensity = n * 0.9
+    showcaseNight(this.mat, n)
+    this.bench?.setNight(n)
+    this.village?.setNight(n)
+    this.scenery?.setNight(n)
+    this.landmarks?.setNight(n)
   }
 }

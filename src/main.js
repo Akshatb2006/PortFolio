@@ -6,6 +6,16 @@ import { City } from './game/City.js'
 import { Vehicle } from './game/Vehicle.js'
 import { Player } from './game/Player.js'
 import { Pedestrians } from './game/Pedestrians.js'
+import { Animals } from './game/Animals.js'
+import { makeCharacter, blendCivilian, FootLock, ankleMins, updateLayer } from './game/Characters.js'
+import { VehicleSystem } from './game/VehicleSystem.js'
+import { Wanted } from './game/Wanted.js'
+import { Police } from './game/Police.js'
+import { Combat } from './game/Combat.js'
+import { Club } from './game/Club.js'
+import { House } from './game/House.js'
+import { ScenicViewer } from './game/Landmarks.js'
+import { Activities } from './game/Activities.js'
 import { CameraRig } from './game/CameraRig.js'
 import { Traffic } from './game/Traffic.js'
 import { BgCars } from './game/BgCars.js'
@@ -23,6 +33,12 @@ import { palette as P } from './game/Palette.js'
 import { installDevCapture } from './game/DevCapture.js'
 
 const $ = (s) => document.querySelector(s)
+
+// Daytime light balance (S1). Measured on the downtown view: the HDRI environment light was adding
+// ~80 brightness to every face equally while the sun added ~35, which flattened all form. Night
+// endpoints in applyNight() are unchanged (environment 0.05, hemisphere 0.3, sun 0.4).
+const DAY = { env: 0.3, hemi: 0.8, sun: 3.3, sky: 0xa6c1ec, ground: 0xb08a64 }
+const NIGHT = { env: 0.05, hemi: 0.3, sun: 0.4 }
 
 class Game {
   constructor() {
@@ -43,7 +59,8 @@ class Game {
     this.renderer.toneMappingExposure = 1.0
 
     this.scene = new THREE.Scene()
-    this.camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 1200)
+    // far plane covers the scenic ring (mountains up to ~1.6 km out; Scenery.js)
+    this.camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 3200)
     this.scene.fog = new THREE.FogExp2(P.sky.horizon, 0.0010)   // light haze toward the horizon colour
 
     const setPct = (p) => { $('#load-pct').textContent = Math.round(p * 100) + '%' }
@@ -55,7 +72,7 @@ class Game {
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.envDay = pmrem.fromEquirectangular(this.assets.hdr).texture
     this.scene.environment = this.envDay
-    this.scene.environmentIntensity = 0.6
+    this.scene.environmentIntensity = DAY.env
     // gradient sky dome (stylised), HDRI kept only for reflections on the car and glass
     this.skyUniforms = { uZenith: { value: new THREE.Color(P.sky.zenith) }, uHorizon: { value: new THREE.Color(P.sky.horizon) }, uGround: { value: new THREE.Color(P.sky.ground) }, uNight: { value: 0 } }
     const skyMat = new THREE.ShaderMaterial({ uniforms: this.skyUniforms, side: THREE.BackSide, depthWrite: false, fog: false,
@@ -72,23 +89,27 @@ class Game {
     this.scene.add(this.skyDome)
     this.scene.background = null
     this.sunDir = new THREE.Vector3(-0.62, 0.36, 0.7).normalize()   // late afternoon, long shadows
-    this.sunLight = new THREE.DirectionalLight(0xffdcb0, 2.6)
+    this.sunLight = new THREE.DirectionalLight(0xffdcb0, DAY.sun)
     this.sunLight.castShadow = this.quality !== 'low'
     const sh = this.sunLight.shadow; const S = this.quality === 'high' ? 2048 : 1024
     sh.mapSize.set(S, S); sh.camera.left = sh.camera.bottom = -60; sh.camera.right = sh.camera.top = 60; sh.camera.near = 20; sh.camera.far = 450; sh.bias = -0.0003; sh.normalBias = 0.5; sh.radius = 6
     this.scene.add(this.sunLight, this.sunLight.target)
-    this.hemi = new THREE.HemisphereLight(0xbcd4f5, 0xa58a6e, 1.25); this.scene.add(this.hemi)
+    this.hemi = new THREE.HemisphereLight(DAY.sky, DAY.ground, DAY.hemi); this.scene.add(this.hemi)
 
     // world
-    this.bgCars = new BgCars(this.scene, this.assets.carLod.scene, 64)
+    this.bgCars = new BgCars(this.scene, this.assets.carLod.scene, 64, this.assets.carLib)
     this.city = new City(this.scene, this.assets, landmarks, this.physics, this.quality, this.bgCars)
     this.physics.buildStatic()
     setPct(0.92)
     this.vehicle = new Vehicle(this.scene, this.physics, this.assets, { ...spawn.car, color: 0xd0201a })
-    this.player = new Player(this.scene, this.physics, this.assets, spawn.player)
+    // playable character: the roster's player civilian (falls back to the Soldier if civilians failed to load)
+    const pc = this.assets.roster?.find(r => r.player)
+    this.player = new Player(this.scene, this.physics, this.assets, spawn.player, pc ? { gltf: pc.gltf, make: makeCharacter, blend: blendCivilian, layer: updateLayer, FootLock, ankleMins } : null)
+    this.vehicles = new VehicleSystem(this)
     this.traffic = new Traffic(this.scene, this.physics, this.bgCars, this.quality === 'low' ? 8 : 14, M.rng(99))
     this.bgCars.finalize()
-    this.peds = new Pedestrians(this.scene, this.assets.soldier, this.quality === 'low' ? 6 : 14, M.rng(7))
+    this.peds = new Pedestrians(this.scene, this.assets.roster || this.assets.soldier, this.quality === 'low' ? 6 : 14, M.rng(7))
+    this.animals = new Animals(this.scene, this.assets.animals)
     this.markers = new Markers(this.scene)
     this.effects = new Effects(this.scene)
     this.input = new Input()
@@ -96,13 +117,33 @@ class Game {
     this.ui = new UI(this)
     this.missions = new Missions(missionDefs, this.markers, this.ui, this.audio, this.save)
     this.rig = new CameraRig(this.camera)
+    this.wanted = new Wanted(this)
+    this.police = new Police(this)
+    this.combat = new Combat(this)
+    this.club = new Club(this)
+    this.house = new House(this)
+    if (this.city.landmarks) this.viewer = new ScenicViewer(this, this.city.landmarks)
+    this.activities = new Activities(this)
+    // camera never passes through walls while indoors (the city camera is unchanged)
+    this.rig.collide = (from, to) => {
+      if (!this.interior) return to
+      const R = this.physics.R, d = to.clone().sub(from), len = d.length(); d.divideScalar(len || 1)
+      const hit = this.physics.world.castRay(new R.Ray(from, d), len, true, R.QueryFilterFlags.EXCLUDE_DYNAMIC | R.QueryFilterFlags.EXCLUDE_KINEMATIC | R.QueryFilterFlags.EXCLUDE_SENSORS, undefined, this.player.collider)
+      return hit ? from.clone().addScaledVector(d, Math.max(0.4, (hit.timeOfImpact ?? hit.toi) - 0.3)) : to
+    }
+    this.peds.onHit = (p) => this.onCrime('hitrun', p.pos.clone())
+    this.peds.effects = this.effects
     for (const t of tokens) if (!this.save.data.tokens.includes(t.id)) this.markers.add('t:' + t.id, { x: t.x, z: t.z, kind: 'token', radius: 2.5, height: 3 })
     this.post = createPostfx(this.renderer, this.scene, this.camera, this.quality)
 
-    this.night = 0; this.nightTarget = 0
+    this.night = 0; this.nightTarget = 0; this.nightLerp = 0
     this.applyNight(0, true)
     this.ui.refreshHud(); this.ui.refreshMenu()
     if (!this.save.data.sound) { this.audio.enabled = false; $('#btn-mute').classList.add('off') }
+
+    // compile every material's shader now, behind the loading screen, instead of on first sight in play
+    // (a car, district or card coming into view for the first time used to stall a frame for 100–250 ms)
+    try { await this.renderer.compileAsync(this.scene, this.camera) } catch (e) { console.warn('[boot] shader precompile skipped', e) }
 
     addEventListener('resize', () => this.resize())
     $('#btn-start').addEventListener('click', () => this.start())
@@ -124,7 +165,7 @@ class Game {
   resize() {
     this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix()
     this.renderer.setPixelRatio(this.dpr)
-    this.renderer.setSize(innerWidth, innerHeight); this.post.resize(innerWidth, innerHeight); this.effects.resize()
+    this.renderer.setSize(innerWidth, innerHeight); this.post.resize(innerWidth, innerHeight, this.dpr); this.effects.resize()
   }
 
   // adaptive resolution: if frames are slow, lower the pixel ratio in steps (and raise it back when there is headroom)
@@ -138,17 +179,18 @@ class Game {
 
   // ------------------------------------------------------------ day / night (HDRI day, graded night)
   applyNight(n, force) {
+    if (this.interior) return   // indoor lighting is the venue's; the exterior is re-applied on leaving
     if (!force && Math.abs(n - this.night) < 0.002) return
     this.night = n
-    this.scene.environmentIntensity = 0.6 - n * 0.55
+    this.scene.environmentIntensity = DAY.env * (1 - n) + NIGHT.env * n
     if (this.skyUniforms) this.skyUniforms.uNight.value = n
-    this.sunLight.intensity = 2.6 * (1 - n) + 0.4 * n
+    this.sunLight.intensity = DAY.sun * (1 - n) + NIGHT.sun * n
     this.sunLight.color.setHex(n > 0.5 ? 0x8fa8ff : 0xffdcb0)
-    this.hemi.intensity = 1.25 * (1 - n) + 0.3 * n
+    this.hemi.intensity = DAY.hemi * (1 - n) + NIGHT.hemi * n
     this.scene.fog.color.set(P.sky.horizon).lerp(new THREE.Color(0x07080f), n)
     this.scene.fog.density = 0.0010 + n * 0.0016
     this.renderer.toneMappingExposure = 1.0 - n * 0.2
-    this.city.setNight(n); this.vehicle.setNight(n); this.traffic.setNight(n)
+    this.city.setNight(n); this.vehicles.setNight(n); this.traffic.setNight(n)
     if (this.post.bloom) { this.post.bloom.strength = 0.18 + n * 0.25; this.post.bloom.threshold = 0.9 + n * 0.06 }
   }
 
@@ -189,6 +231,19 @@ class Game {
     $('#intro-title')?.remove(); $('#intro-skip')?.remove()
     this.ui.district(M.districtAt(this.player.pos.x, this.player.pos.z))
     this.ui.hint('Walk to the yellow marker, or press E next to the car to drive.')
+    // first visit: a short controls card (full list: pause menu → Controls)
+    if (!this.save.data.onboarded) {
+      this.save.data.onboarded = true; this.save.write()
+      const k = (x) => `<kbd>${x}</kbd>`
+      this.ui.venue('Welcome to Akshat City', `<p class="venue-lead">A quick tour of the controls. The full list is in the pause menu (${k('M')}) under Controls.</p>
+        <ul class="help-list">
+          <li>${k('W')}${k('A')}${k('S')}${k('D')} or arrows: walk and turn, ${k('Shift')} to sprint</li>
+          <li>${k('E')} by the red Ferrari: drive it. Hold ${k('E')} next to a parked car to steal one.</li>
+          <li>Yellow markers start portfolio missions. Cyan and pink blips on the radar are side activities and the LUMEN club.</li>
+          <li>${k('F')} jab, ${k('G')} kick, ${k('Space')} roll: only the crew in Research Park wants a fight.</li>
+          <li>Stars mean the police are after you: break their line of sight to lose them.</li>
+        </ul>`)
+    }
   }
 
   start() {
@@ -224,20 +279,53 @@ class Game {
     this.rig.snapTo(this.target())
   }
 
-  enterExit() {
-    const p = this.player, v = this.vehicle
-    if (p.inVehicle) {
-      if (Math.abs(v.speed) > 5) { this.ui.hint('Slow down before getting out.'); return }
-      p.inVehicle = null; v.occupied = false
-      const side = new THREE.Vector3(Math.cos(v.heading), 0, -Math.sin(v.heading)).multiplyScalar(2.4)
-      const at = v.pos.clone().add(side)
-      p.setActive(true); p.teleport(at.x, at.z, v.heading)
-      this.audio.ui()
-    } else if (p.pos.distanceTo(v.pos) < 4.5) {
-      p.inVehicle = v; v.occupied = true; p.setActive(false)
-      this.audio.ui()
+  enterExit() { this.vehicles.tap() }
+
+  // ------------------------------------------------------------ interactions: deterministic priority
+  // every place-based interaction in range; higher priority first, then nearest
+  // GPS: one waypoint at a time (map click or the map's place list); choosing it again clears it
+  setWaypoint(x, z, label = 'GPS waypoint', id = 'pin') {
+    if (this.waypoint && this.waypoint.id === id && id !== 'pin') return this.clearWaypoint()
+    this.waypoint = { x, z, label, id }
+    this.markers.add('w:gps', { x, z, kind: 'waypoint', label, radius: 2.5, height: 12 })
+    this.ui.hint(`GPS set: ${label}. Follow the purple marker on the radar.`)
+  }
+  clearWaypoint() { this.waypoint = null; this.markers.remove('w:gps') }
+
+  interactables() { return [...this.club.interactables(), ...this.house.interactables(), ...(this.viewer?.interactables() || []), ...(this.activities?.interactables() || [])] }
+  pickInteractable() {
+    const p = this.player.pos; let best = null
+    for (const it of this.interactables()) {
+      const d = Math.hypot(it.pos.x - p.x, it.pos.z - p.z)
+      if (d > it.radius) continue
+      if (!best || it.priority > best.priority || (it.priority === best.priority && d < best.d)) best = { ...it, d }
     }
-    this.rig.yaw = 0
+    return best
+  }
+
+  // short fade to black around a scene change (entering / leaving interiors)
+  fade(cb) {
+    const el = document.getElementById('fade'); el.classList.add('on')
+    setTimeout(() => { cb(); setTimeout(() => el.classList.remove('on'), 60) }, 260)
+  }
+
+  // ------------------------------------------------------------ crime and consequences
+  onCrime(kind, pos) { this.wanted.crime(kind, pos) }
+
+  busted() {
+    const fine = Math.min(this.save.data.money ?? 0, 100)
+    this.save.data.money = (this.save.data.money ?? 0) - fine; this.save.write(); this.ui.cash()
+    const v = this.player.inVehicle
+    if (v) { this.player.inVehicle = null; v.occupied = false; v.body.setLinvel({ x: 0, y: 0, z: 0 }, true); this.player.unseat(); this.player.setActive(true) }
+    this.missions.active && this.missions.fail('BUSTED')
+    this.wanted.clear('busted')
+    for (const u of [...this.police.units]) this.police.remove(u)
+    // released outside the Career Heights station
+    const st = M.districtCenter(M.districts.find(d => d.id === 'career'))
+    this.player.teleport(M.roadCoord(6), st.z, Math.PI)
+    this.rig.snapTo(this.target())
+    this.ui.banner('BUSTED', fine ? `FINE $${fine}` : 'RELEASED WITH A WARNING', true)
+    this.audio.failed()
   }
 
   explodeBarrel(prop) {
@@ -261,34 +349,52 @@ class Game {
     input.enabled = this.started && !this.ui.blocking && !this.cine.on
     input.update()
     if (input.justPressed('n')) this.nightTarget = this.nightTarget > 0.5 ? 0 : 1
-    this.applyNight(this.night + (this.nightTarget - this.night) * Math.min(1, dt * 1.5))
+    // Fade toward the target. The fade value is kept separately from the last applied value: applyNight()
+    // ignores changes under 0.002, and feeding it the applied value made the fade stall at ~0.04 / ~0.96.
+    this.nightLerp += (this.nightTarget - this.nightLerp) * Math.min(1, dt * 1.5)
+    if (Math.abs(this.nightTarget - this.nightLerp) < 0.001) this.nightLerp = this.nightTarget
+    this.applyNight(this.nightLerp, this.nightLerp === this.nightTarget && this.night !== this.nightTarget)
+
+    // paused: any menu or panel open (map, dossier, mission card, bartender, social wall) freezes the world
+    if (this.started && !this.cine.on && this.ui.blocking) { this.ui.tickMap(); this.post.render(0, this.night); input.flush(); return }
 
     if (this.cine.on) {
       this.cinematicFrame(dt)
-      this.vehicle.update(dt, input); this.physics.step(dt); this.vehicle.sync()
-      this.traffic.update(dt, this.player.pos); this.peds.update(dt, this.player.pos, false)
+      this.vehicles.update(dt, input); this.physics.step(dt); this.vehicles.sync()
+      this.traffic.update(dt, this.player.pos); this.peds.update(dt, this.player.pos, false); this.animals.update(dt, this.player.pos)
     } else {
       if (input.justPressed('v', 'camera')) this.rig.toggle()
       if (input.justPressed('e', 'enter', 'interact')) this.onInteract()
       if (input.justPressed('r')) this.respawn()
 
       const t = this.target()
-      if (this.player.inVehicle) {
-        this.vehicle.update(dt, input)
-      } else {
-        const camYaw = this.rig.mode === 'first' ? this.player.heading + this.rig.yaw : Math.atan2(this.camera.position.x - this.player.pos.x, this.camera.position.z - this.player.pos.z) + Math.PI
-        const fwd = new THREE.Vector2(Math.sin(camYaw), Math.cos(camYaw)), right = new THREE.Vector2(fwd.y, -fwd.x)
-        const dir = fwd.multiplyScalar(input.axis.y).add(right.multiplyScalar(input.axis.x))
+      if (!this.player.inVehicle) {
         if (this.rig.mode === 'first') { this.player.heading += this.rig.yaw; this.rig.yaw = 0 }
-        this.player.update(dt, dir, input.sprint)
-        this.vehicle.update(dt, input)
+        // on foot: left / right turn the character, up / down walk forward / back (was camera-relative,
+        // which mirrored left and right and spun the character as the camera re-centred behind it)
+        this.combat.input(dt, input)
+        this.player.update(dt, input.axis.x, input.axis.y, input.sprint)
+        this.vehicles.updateHold(dt, input)
       }
-      this.traffic.update(dt, t.pos)
+      this.vehicles.update(dt, input)   // every car; only the occupied one reads the input
+      this.traffic.update(dt, t.pos, this.police.units)
+      this.police.update(dt)
       this.physics.step(dt)
-      this.vehicle.sync(); if (!this.player.inVehicle) this.player.sync(); else this.player.pos.copy(this.vehicle.pos)
-      this.peds.update(dt, t.pos, t.isCar && Math.abs(t.speed) > 7)
+      this.vehicles.sync(); if (!this.player.inVehicle) { this.player.sync(); this.player.afterSync(dt) } else { this.player.pos.copy(this.vehicle.pos); this.player.mesh.visible = this.rig.mode !== 'first' }
+      this.peds.update(dt, t.pos, t.isCar && Math.abs(t.speed) > 7, t.isCar ? Math.abs(t.speed) : 0, t.isCar ? this.vehicle : null, this.camera); this.animals.update(dt, t.pos)
+      this.wanted.update(dt)
+      this.combat.update(dt)
+      this.club.update(dt); this.house.update()
+      this.activities.update(dt)
 
       // crash & drift feedback
+      // ramming a police car is an attack on the police
+      // (only when the player drives into the police car: velocity toward it, and at most once every 5 s)
+      this.ramCd = Math.max(0, (this.ramCd || 0) - dt)
+      if (this.player.inVehicle && this.vehicle.lastHit > 5 && !this.ramCd) {
+        const v = this.vehicle, u = this.police.units.find(u => u.pos.distanceTo(v.pos) < 5.5)
+        if (u) { const dx = u.pos.x - v.pos.x, dz = u.pos.z - v.pos.z, d = Math.hypot(dx, dz) || 1; if (v.impactVel && (v.impactVel.x * dx + v.impactVel.z * dz) / d > 6) { this.onCrime('police', v.pos.clone()); this.ramCd = 5 } }
+      }
       if (this.vehicle.lastHit > 5) {
         const f = this.vehicle.pos.clone().add(new THREE.Vector3(Math.sin(this.vehicle.heading), 0.5, Math.cos(this.vehicle.heading)).multiplyScalar(2.2))
         this.effects.impact(f.x, f.y, f.z, this.vehicle.lastHit); this.audio.crash(this.vehicle.lastHit); this.rig.shake = Math.min(1, this.vehicle.lastHit * 0.06)
@@ -318,15 +424,18 @@ class Game {
         this.audio.pickup(); this.ui.refreshHud(); this.ui.hint(`Respect token ${this.save.data.tokens.length}/${tokens.length}`)
       }
       this.missions.update(dt, hit, !!this.player.inVehicle)
-      if (!hold && !this.player.inVehicle && this.player.pos.distanceTo(this.vehicle.pos) < 4.5) hold = 'Press E to get in the car'
+      if (!hold) hold = this.activities.prompt()
+      if (!hold && !this.player.inVehicle) hold = this.pickInteractable()?.prompt || null
+      if (!hold) hold = this.vehicles.prompt()
       if (hold !== this.lastHold && !this.ui.blocking) { this.ui.hintHold(hold); this.lastHold = hold }
-      this.ui.district(M.districtAt(pos.x, pos.z))
+      if (this.waypoint && Math.hypot(pos.x - this.waypoint.x, pos.z - this.waypoint.z) < 9) { this.ui.hint(`You have arrived: ${this.waypoint.label}`); this.clearWaypoint() }
+      this.ui.district(this.interior ? { name: this.interior.name } : M.districtAt(pos.x, pos.z))
       this.ui.speed(this.player.inVehicle ? this.vehicle.speed : this.player.speed)
       this.ui.drawRadar(pos, this.target().heading)
       this.audio.engine(this.vehicle.speed, input.axis.y, !!this.player.inVehicle)
     }
 
-    this.markers.update(dt, this.night)
+    this.markers.focus.copy(this.target().pos); this.markers.update(dt, this.night)
     this.effects.update(dt)
     this.city.update(dt)
     const pp = this.target().pos
@@ -340,7 +449,10 @@ class Game {
   onInteract() {
     const hit = this.markers.hit(this.target().pos, this.player.inVehicle ? 1.5 : 0)
     if (hit && hit.startsWith('m:') && !this.missions.active) { this.missions.offer(hit.slice(2)); return }
-    this.enterExit()
+    if (this.activities.tryInteract()) return
+    const it = !this.player.inVehicle && this.pickInteractable()
+    if (it) return it.action()
+    this.vehicles.tap()
   }
 }
 

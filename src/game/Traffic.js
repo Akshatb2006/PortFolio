@@ -31,13 +31,14 @@ export class Traffic {
     return { x: a.x + dx * c.t + fz * off, z: a.z + dz * c.t - fx * off, heading: Math.atan2(fx, fz), len }
   }
 
-  update(dt, playerPos) {
+  update(dt, playerPos, others = []) {
     for (const c of this.cars) {
       const p = this.carPos(c)
       const ahead = (playerPos.x - p.x) * Math.sin(p.heading) + (playerPos.z - p.z) * Math.cos(p.heading)
       const side = Math.abs((playerPos.x - p.x) * Math.cos(p.heading) - (playerPos.z - p.z) * Math.sin(p.heading))
       // also yield to other traffic right ahead
       let blocked = ahead > 0 && ahead < 10 && side < 3.5
+      if (!blocked) for (const o of others) { const ax = (o.pos.x - p.x) * Math.sin(p.heading) + (o.pos.z - p.z) * Math.cos(p.heading); const sd = Math.abs((o.pos.x - p.x) * Math.cos(p.heading) - (o.pos.z - p.z) * Math.sin(p.heading)); if (ax > 0 && ax < 10 && sd < 3) { blocked = true; break } }
       if (!blocked) for (const o of this.cars) { if (o === c) continue; const ax = (o.pos.x - p.x) * Math.sin(p.heading) + (o.pos.z - p.z) * Math.cos(p.heading); const sd = Math.abs((o.pos.x - p.x) * Math.cos(p.heading) - (o.pos.z - p.z) * Math.sin(p.heading)); if (ax > 0 && ax < 8 && sd < 2.5) { blocked = true; break } }
       c.stop = blocked ? 1 : Math.max(0, c.stop - dt * 1.5)
       const v = c.speed * (1 - c.stop)

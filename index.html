@@ -32,21 +32,23 @@
           <button id="btn-resume" class="btn btn-resume">Resume mode (just the facts)</button>
         </div>
         <div class="title-controls">
-          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows to drive</span>
-          <span><kbd>Space</kbd> handbrake</span>
-          <span><kbd>E</kbd> / <kbd>Enter</kbd> interact</span>
-          <span><kbd>M</kbd> map &amp; missions</span>
+          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows move &amp; drive</span>
+          <span><kbd>E</kbd> interact · hold to steal</span>
+          <span><kbd>F</kbd> <kbd>G</kbd> fight · <kbd>Space</kbd> roll / handbrake</span>
+          <span><kbd>M</kbd> pause &amp; map</span>
           <span><kbd>V</kbd> camera</span>
         </div>
       </div>
     </section>
 
     <!-- HUD -->
+    <div id="hurt" class="hurt"></div>
     <div id="hud" class="hidden">
       <div class="hud-top-right">
         <div class="hud-stat"><span class="hud-label">RESPECT</span><div class="respect-bar"><div id="respect-fill"></div></div></div>
         <div class="hud-stat"><span class="hud-label">MISSIONS</span><span id="hud-missions" class="hud-value">0 / 7</span></div>
         <div class="hud-stat"><span class="hud-label">TOKENS</span><span id="hud-tokens" class="hud-value">0 / 10</span></div>
+        <div class="hud-stat"><span class="hud-label">CASH</span><span id="hud-cash" class="hud-value">$250</span></div>
         <div class="hud-stat hud-time hidden"><span class="hud-label">TIME</span><span id="hud-timer" class="hud-value">00:00</span></div>
         <div class="hud-buttons">
           <button id="btn-menu" class="hud-btn" title="Map & missions (M)">MAP</button>
@@ -57,6 +59,8 @@
         <canvas id="radar" width="200" height="200"></canvas>
         <div id="hud-speed">0</div>
       </div>
+      <div id="wanted" class="wanted hidden"></div>
+      <div id="health" class="health hidden"><div class="health-label">HEALTH</div><div class="health-bar"><div id="health-fill"></div></div></div>
       <div id="district-name" class="district-name"></div>
       <div id="objective" class="objective hidden"></div>
       <div id="hint" class="hint hidden"></div>
@@ -112,39 +116,72 @@
           <button class="tab" data-tab="help">Controls</button>
         </div>
         <div class="menu-panel active" data-panel="map">
-          <canvas id="bigmap" width="640" height="640"></canvas>
+          <div class="map-wrap">
+            <canvas id="bigmap" width="960" height="960" title="Click to set a GPS waypoint"></canvas>
+            <div class="map-side">
+              <h4>Places</h4>
+              <div id="map-places"></div>
+              <p class="map-tip">Click a place or anywhere on the map to set a <strong>GPS waypoint</strong>. Follow the purple marker on the radar.</p>
+            </div>
+          </div>
           <div class="map-legend">
-            <span><i class="dot yellow"></i>Mission available</span>
-            <span><i class="dot green"></i>Mission passed</span>
-            <span><i class="dot red"></i>Current objective</span>
+            <span><i class="dot white"></i>You (arrow)</span>
+            <span><i class="dot lime"></i>Akshat’s House</span>
+            <span><i class="dot pink"></i>LUMEN club</span>
+            <span><i class="dot yellow"></i>Mission</span>
+            <span><i class="dot green"></i>Passed</span>
+            <span><i class="dot red"></i>Objective</span>
             <span><i class="dot blue"></i>Token</span>
-            <span><i class="dot white"></i>You</span>
+            <span><i class="dot cyan"></i>Activity</span>
+            <span><i class="dot purple"></i>GPS</span>
           </div>
         </div>
         <div class="menu-panel" data-panel="missions"><div id="missions-list"></div></div>
         <div class="menu-panel" data-panel="info"><div id="info-list"></div></div>
         <div class="menu-panel" data-panel="help">
           <h3>Controls</h3>
+          <h4 class="help-sub">On foot</h4>
           <ul class="help-list">
-            <li><kbd>W</kbd> / <kbd>↑</kbd> accelerate · <kbd>S</kbd> / <kbd>↓</kbd> brake &amp; reverse</li>
-            <li><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> steer</li>
-            <li><kbd>Space</kbd> handbrake (drift!)</li>
-            <li><kbd>E</kbd> or <kbd>Enter</kbd> interact at a marker</li>
-            <li><kbd>M</kbd> or <kbd>Esc</kbd> map &amp; missions</li>
-            <li><kbd>R</kbd> respawn at your last district if you get stuck</li>
-            <li><kbd>V</kbd> switch first / third person camera</li>
-            <li><kbd>N</kbd> toggle day / night</li>
-            <li>Drag the mouse (or the right side of the screen on touch) to look around</li>
+            <li><kbd>W</kbd> / <kbd>↑</kbd> walk forward · <kbd>S</kbd> / <kbd>↓</kbd> step back · <kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> turn · hold <kbd>Shift</kbd> sprint</li>
+            <li><kbd>F</kbd> jab · <kbd>G</kbd> heavy kick · <kbd>Space</kbd> dodge roll (only in fights; punching civilians or police gets you wanted)</li>
+            <li><kbd>E</kbd> interact: missions, doors, bartender, social wall, the scenic viewer at the end of Sunset Pier (<kbd>A</kbd> <kbd>D</kbd> switch views) · get into a car</li>
+            <li>Hold <kbd>E</kbd> next to a parked car to steal it (witnesses may call the police)</li>
+          </ul>
+          <h4 class="help-sub">Driving</h4>
+          <ul class="help-list">
+            <li><kbd>W</kbd> / <kbd>↑</kbd> accelerate · <kbd>S</kbd> / <kbd>↓</kbd> brake &amp; reverse · <kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> steer</li>
+            <li><kbd>Space</kbd> handbrake (drift) · <kbd>E</kbd> get out (slow down first)</li>
+          </ul>
+          <h4 class="help-sub">Police</h4>
+          <ul class="help-list">
+            <li>Stars show your wanted level. Break line of sight and get far from where you were last seen (the blue circle on the radar) until the search ends.</li>
+            <li>Standing still next to a police car, or an officer reaching you, means BUSTED (a fine).</li>
+          </ul>
+          <h4 class="help-sub">General</h4>
+          <ul class="help-list">
+            <li><kbd>M</kbd> or <kbd>Esc</kbd> pause, map &amp; missions · <kbd>V</kbd> first / third person camera · <kbd>N</kbd> day / night</li>
+            <li><kbd>R</kbd> respawn nearby if you are ever stuck · drag the mouse to look around</li>
           </ul>
           <h3>How it works</h3>
           <p>Each district of the city holds one part of my portfolio. Drive into a glowing yellow marker to start that district's mission. Finishing it unlocks the section in the Dossier. Blue tokens scattered around the city raise your respect.</p>
           <p class="help-small">Built with Three.js, Rapier physics and Vite. Progress is saved in your browser.</p>
           <h3>Credits</h3>
-          <p class="help-small">Car: “Ferrari 458 Italia” by vicent091036 (CC-BY), via the three.js examples. Character: “Soldier” (Mixamo) via the three.js examples. Sky HDRI and outer-terrain grass texture: Poly Haven (CC0). Water normal map: three.js examples. Everything else is procedural.</p>
+          <p class="help-small">Car: “Ferrari 458 Italia” by vicent091036 (CC-BY), via the three.js examples. Sky HDRI and outer-terrain grass texture: Poly Haven (CC0). Water normal map: three.js examples. Downtown building modules, street props, trees and plants: Quaternius “Downtown City MegaKit” and “Stylized Nature MegaKit” (CC0). Player and pedestrians: Quaternius “Ultimate Modular Men” and “Ultimate Modular Women” (CC0); their run, dance, sitting and talking animations are adapted from the Quaternius “Universal Animation Library” (CC0). Farm animals: Gobkit “Free Animal Pack Vol.3” (CC0). Parked and police cars: Kenney “Car Kit” (CC0). Grove Street houses: Quaternius “Medieval Village MegaKit” (CC0). Mountain and cliff textures: Poly Haven (CC0). Fallback character: “Soldier” (Mixamo) via the three.js examples. Everything else is procedural.</p>
           <button id="btn-reset" class="btn btn-ghost">Reset progress</button>
         </div>
       </div>
     </div>
+
+    <!-- Venue panel: bartender menu, social wall, activities -->
+    <div id="venue" class="modal hidden">
+      <div class="modal-box venue-box">
+        <button class="modal-close" data-close="venue" aria-label="Close">✕</button>
+        <h2 id="venue-title" class="venue-title"></h2>
+        <div id="venue-content"></div>
+        <div class="modal-actions"><button class="btn btn-ghost" data-close="venue">Close (Esc)</button></div>
+      </div>
+    </div>
+    <div id="fade" class="fade"></div>
 
     <!-- Resume mode: plain, accessible, everything unlocked -->
     <section id="resume" class="screen hidden">

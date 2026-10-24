@@ -2,3 +2,6 @@ node_modules
 dist
 .DS_Store
 .env
+
+# downloaded asset packs (source archives; only trimmed files under public/ are shipped)
+/*.zip

@@ -29,10 +29,12 @@ export class UI {
     $('#dialogue-skip').addEventListener('click', () => this.dialogueEnd(true))
     addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase()
+      if (this.modal && ['enter', 'e', 'escape', 'm'].includes(k)) this.game.input.consume(k)   // the menu owns this press
       if (this.modal === 'dialogue' && (k === 'enter' || k === 'e')) this.dialogueNext()
       else if (this.modal === 'card' && (k === 'enter' || k === 'e' || k === 'escape')) this.close('card')
       else if (this.modal === 'menu' && (k === 'escape' || k === 'm')) this.close('menu')
-      else if (!this.modal && this.game.started && (k === 'm' || k === 'escape')) this.toggleMenu()
+      else if (this.modal === 'venue' && (k === 'escape' || k === 'e')) this.close('venue')
+      else if (!this.modal && this.game.started && !this.game.cine.on && (k === 'm' || k === 'escape')) this.toggleMenu()   // not during a cinematic view (Escape leaves the scenic viewer)
     })
   }
 
@@ -103,9 +105,19 @@ export class UI {
     $('#hud-tokens').textContent = `${t} / ${g.tokenDefs.length}`
     const respect = Math.round((m * 10 + t * 3) / (g.missions.defs.length * 10 + g.tokenDefs.length * 3) * 100)
     $('#respect-fill').style.width = respect + '%'
+    this.cash()
     this.respect = respect
   }
   speed(v) { $('#hud-speed').textContent = Math.round(Math.abs(v) * 3.2) }
+  cash() { $('#hud-cash').textContent = '$' + (this.game.save.data.money ?? 0) }
+  health(v) { const el = $('#health'); el.classList.toggle('hidden', v >= 1 && !this.game.combat?.engaged); $('#health-fill').style.width = Math.round(v * 100) + '%' }
+
+  // ------------------------------------------------------------ venue panels (bartender, social wall, activities)
+  venue(title, html, onMount) {
+    $('#venue-title').textContent = title
+    const root = $('#venue-content'); root.innerHTML = html
+    this.open('venue'); onMount?.(root)
+  }
 
   // ------------------------------------------------------------ cards
   card(ref, after) {
@@ -116,7 +128,7 @@ export class UI {
   cardHtml(ref) {
     const link = (url, label = 'Open ↗') => `<a class="card-link" href="${esc(url)}" target="_blank" rel="noopener">${label}</a>`
     if (ref.type === 'about') return `<h2>${esc(C.profile.name)}</h2><div class="card-meta">${esc(C.profile.tagline)}</div>${C.profile.about.map(p => `<p>${esc(p)}</p>`).join('')}`
-    if (ref.type === 'project') { const p = C.projects.find(p => p.id === ref.id); return `<h2>${esc(p.title)}</h2><div class="card-meta">${esc(p.role)} · ${esc(p.stack)}</div><img src="${p.image}" alt="${esc(p.title)}"><p>${esc(p.blurb)}</p>${link(p.url)}` }
+    if (ref.type === 'project') { const p = C.projects.find(p => p.id === ref.id); return `<h2>${esc(p.title)}</h2><div class="card-meta">${esc(p.role)} · ${esc(p.stack)}</div><img src="${p.image}" alt="${esc(p.title)}"><p>${esc(p.blurb)}</p>${p.verified === false ? '<p class="card-meta">Link awaiting verification.</p>' : link(p.url)}` }
     if (ref.type === 'lab') { const p = C.lab.find(p => p.id === ref.id); return `<h2>${esc(p.title)}</h2><div class="card-meta">Lab · experiment</div><img src="${p.image}" alt="${esc(p.title)}"><p>${esc(p.blurb)}</p>${link(p.url, 'View on GitHub ↗')}` }
     if (ref.type === 'experience') { const e = C.experience.find(e => e.id === ref.id); return `<h2>${esc(e.org)}</h2><div class="card-meta">${esc(e.role)} · ${esc(e.period)}</div><ul>${e.points.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` }
     if (ref.type === 'skill') { const s = C.skills.find(s => s.id === ref.id); return `<h2>${esc(s.label)}</h2><div class="card-meta">Skill crate</div><div class="tags">${s.items.map(i => `<span class="tag">${esc(i)}</span>`).join('')}</div>` }
@@ -126,11 +138,11 @@ export class UI {
   }
 
   // ------------------------------------------------------------ menu
-  toggleMenu() { if (this.modal === 'menu') this.close('menu'); else if (!this.modal) { this.refreshMenu(); this.open('menu'); this.drawBigMap() } }
+  toggleMenu() { if (this.modal === 'menu') this.close('menu'); else if (!this.modal) { this.refreshMenu(); this.open('menu'); this.refreshPlaces(); this.drawBigMap() } }
   tab(name) {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name))
     document.querySelectorAll('.menu-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name))
-    if (name === 'map') this.drawBigMap()
+    if (name === 'map') { this.refreshPlaces(); this.drawBigMap() }
   }
   refreshMenu() {
     const g = this.game
@@ -139,6 +151,9 @@ export class UI {
       const dist = M.districts.find(x => x.id === d.district)
       return `<div class="mission-row"><span class="status ${done ? 'done' : active ? 'active' : 'todo'}"></span><div><h4>${esc(d.title)}</h4><p>${esc(dist.name)} · ${done ? 'Passed' : active ? 'In progress' : 'Available'}</p></div><span class="spacer"></span>${active ? '<button class="btn btn-ghost" data-abort>Abandon</button>' : `<button class="btn btn-ghost" data-goto="${d.id}">Go there</button>`}</div>`
     }).join('')
+    // side activities
+    const acts = g.activities?.summary() || []
+    $('#missions-list').insertAdjacentHTML('beforeend', `<h3 class="side-head">Side activities</h3>` + acts.map(a => `<div class="mission-row"><span class="status ${a.done ? 'done' : 'todo'}"></span><div><h4>${esc(a.title)}</h4><p>${esc(a.where)} · ${esc(a.how)}${a.best ? ` · Best ${a.best.toFixed(2)} s` : ''}${a.count ? ` · Done ×${a.count}` : ''}</p></div></div>`).join(''))
     $('#missions-list').querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => { g.teleportTo(b.dataset.goto); this.close('menu') }))
     $('#missions-list').querySelectorAll('[data-abort]').forEach(b => b.addEventListener('click', () => { g.missions.abort(); this.close('menu') }))
     const unlocked = (k) => g.missions.defs.some(d => d.unlocks === k && g.missions.isDone(d.id))
@@ -147,11 +162,11 @@ export class UI {
     $('#info-list').innerHTML =
       sec('about', 'About', C.profile.about.map(p => `<p>${esc(p)}</p>`).join(''), mt('about')) +
       sec('experience', 'Experience', `<ul>${C.experience.map(e => `<li><strong>${esc(e.role)}</strong> — ${esc(e.org)} (${esc(e.period)})</li>`).join('')}</ul>`, mt('experience')) +
-      sec('projects', 'Projects', `<ul>${C.projects.map(p => `<li><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a> — ${esc(p.blurb)}</li>`).join('')}</ul>`, mt('projects')) +
+      sec('projects', 'Projects', `<ul>${C.projects.map(p => `<li>${p.verified === false ? esc(p.title) : `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>`} — ${esc(p.blurb)}</li>`).join('')}</ul>`, mt('projects')) +
       sec('lab', 'Lab', `<ul>${C.lab.map(p => `<li><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a></li>`).join('')}</ul>`, mt('lab')) +
       sec('skills', 'Skills', C.skills.map(s => `<strong>${esc(s.label)}</strong><div class="tags">${s.items.map(i => `<span class="tag">${esc(i)}</span>`).join('')}</div>`).join(''), mt('skills')) +
       sec('achievements', 'Achievements', `<ul>${C.achievements.map(a => `<li><strong>${esc(a.title)}</strong> — ${esc(a.detail)}</li>`).join('')}</ul>`, mt('achievements')) +
-      sec('socials', 'Socials', `<ul>${C.socials.map(s => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a> — ${esc(s.handle)}</li>`).join('')}</ul>`, mt('socials'))
+      sec('socials', 'Socials', `<ul>${C.verifiedSocials.map(s => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a> — ${esc(s.handle)}</li>`).join('')}</ul>`, mt('socials'))
   }
 
   // ------------------------------------------------------------ résumé mode
@@ -161,22 +176,73 @@ export class UI {
       <h1>${esc(C.profile.name)}</h1><div class="tagline">${esc(C.profile.tagline)}</div>
       <h2>About</h2>${C.profile.about.map(p => `<p>${esc(p)}</p>`).join('')}
       <h2>Experience</h2>${C.experience.map(e => `<div class="entry"><h4>${esc(e.role)} · ${esc(e.org)}</h4><div class="meta">${esc(e.period)}</div><ul>${e.points.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>`).join('')}
-      <h2>Projects</h2><div class="grid">${C.projects.map(p => `<div class="pcard"><img src="${p.image}" alt=""><div><h4>${esc(p.title)}</h4><p>${esc(p.blurb)}</p>${link(p.url, 'Open ↗')}</div></div>`).join('')}</div>
+      <h2>Projects</h2><div class="grid">${C.projects.map(p => `<div class="pcard"><img src="${p.image}" alt=""><div><h4>${esc(p.title)}</h4><p>${esc(p.blurb)}</p>${p.verified === false ? '<p class="meta">Link awaiting verification</p>' : link(p.url, 'Open ↗')}</div></div>`).join('')}</div>
       <h2>Lab</h2><div class="grid">${C.lab.map(p => `<div class="pcard"><img src="${p.image}" alt=""><div><h4>${esc(p.title)}</h4><p>${esc(p.blurb)}</p>${link(p.url, 'GitHub ↗')}</div></div>`).join('')}</div>
       <h2>Skills</h2>${C.skills.map(s => `<p><strong>${esc(s.label)}:</strong> ${s.items.map(esc).join(', ')}</p>`).join('')}
       <h2>Achievements</h2><ul>${C.achievements.map(a => `<li><strong>${esc(a.title)}</strong> — ${esc(a.detail)}</li>`).join('')}</ul>
-      <h2>Contact</h2><div class="links">${C.socials.map(s => link(s.url, s.name + ' · ' + s.handle)).join('')}</div>`
+      <h2>Contact</h2><div class="links">${C.verifiedSocials.map(s => link(s.url, s.name + ' · ' + s.handle)).join('')}</div>`
     $('#title').classList.add('hidden'); $('#resume').classList.remove('hidden')
   }
 
   // ------------------------------------------------------------ maps
+  // places worth finding: home, club, activities, then missions not yet passed (also the GPS list)
+  places() {
+    const g = this.game, out = []
+    if (g.house?.door) out.push({ id: 'house', name: 'Akshat’s House', sub: 'About me', x: g.house.door.x, z: g.house.door.z, color: '#b6f07a', tag: 'HOME' })
+    if (g.club?.door) out.push({ id: 'club', name: 'LUMEN Club', sub: 'Nightlife', x: g.club.door.x, z: g.club.door.z, color: '#ff6ac1', tag: 'LUMEN' })
+    for (const a of g.activities?.places() || []) out.push(a)
+    for (const d of g.missions.defs) if (!g.missions.isDone(d.id)) out.push({ id: 'm:' + d.id, name: d.title, sub: 'Mission', x: d.marker.x, z: d.marker.z, color: '#f6c543' })
+    return out
+  }
   drawBigMap() {
-    const g = this.bigmap, W = 640
-    const s = W / M.SIZE, u = (v) => (v - M.ORIGIN) * s
+    const cv = this.bigmap.canvas, g = this.bigmap, W = cv.width
+    const s = W / M.SIZE, u = (v) => (v - M.ORIGIN) * s, k = W / 640
     g.drawImage(this.game.city.groundCanvas, 0, 0, W, W)
-    g.font = 'bold 15px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#fff'; g.strokeStyle = 'rgba(0,0,0,.8)'; g.lineWidth = 3
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round'
+    g.font = `bold ${15 * k}px "Barlow Condensed", sans-serif`; g.fillStyle = '#fff'; g.strokeStyle = 'rgba(0,0,0,.8)'; g.lineWidth = 3 * k
     for (const d of M.districts) { const c = M.districtCenter(d); g.strokeText(d.name.toUpperCase(), u(c.x), u(c.z)); g.fillText(d.name.toUpperCase(), u(c.x), u(c.z)) }
-    this.drawBlips(g, (x, z) => [u(x), u(z)], 6)
+    this.drawBlips(g, (x, z) => [u(x), u(z)], 6 * k)
+    // place tags: small pills next to home, the club and the activities
+    g.font = `bold ${12 * k}px "Barlow Condensed", sans-serif`
+    for (const p of this.places()) {
+      if (!p.tag) continue
+      const x = u(p.x), below = u(p.z) + 16 * k < W - 10 * k, y = u(p.z) + (below ? 16 : -16) * k, w = g.measureText(p.tag).width + 12 * k   // under the dot: clear of district names and the GPS pin
+      g.fillStyle = 'rgba(10,12,20,.85)'; g.beginPath(); g.roundRect(x - w / 2, y - 9 * k, w, 18 * k, 9 * k); g.fill()
+      g.strokeStyle = p.color; g.lineWidth = 1.5 * k; g.stroke(); g.fillStyle = '#fff'; g.fillText(p.tag, x, y + 0.5)
+    }
+    // GPS waypoint pin
+    const wp = this.game.waypoint
+    if (wp) { const x = u(wp.x), y = u(wp.z); g.fillStyle = '#b46bff'; g.strokeStyle = '#000'; g.lineWidth = 2 * k; g.beginPath(); g.moveTo(x, y); g.arc(x, y - 14 * k, 8 * k, Math.PI * 0.8, Math.PI * 0.2); g.closePath(); g.fill(); g.stroke() }
+    // you: an arrow pointing where you face
+    const t = this.game.target(), px = u(t.pos.x), py = u(t.pos.z), h = t.heading
+    g.save(); g.translate(px, py); g.rotate(Math.PI - h); g.scale(k, k)
+    g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 2
+    g.beginPath(); g.moveTo(0, -11); g.lineTo(8, 9); g.lineTo(0, 4); g.lineTo(-8, 9); g.closePath(); g.fill(); g.stroke()
+    g.restore()
+  }
+  // GPS place list beside the map; click handler on the canvas (bound once)
+  refreshPlaces() {
+    const el = $('#map-places'); if (!el) return
+    const wp = this.game.waypoint
+    el.innerHTML = this.places().map((p, i) => `<button class="place-btn${wp && wp.id === p.id ? ' active' : ''}" data-place="${i}"><i class="dot" style="background:${p.color}"></i>${esc(p.name)}<small>${esc(p.sub)}</small></button>`).join('')
+    const list = this.places()
+    el.querySelectorAll('[data-place]').forEach(b => b.addEventListener('click', () => { const p = list[+b.dataset.place]; this.game.setWaypoint(p.x, p.z, p.name, p.id); this.refreshPlaces(); this.drawBigMap() }))
+    if (!this.mapClickBound) {
+      this.mapClickBound = true
+      const cv = this.bigmap.canvas
+      cv.addEventListener('click', (e) => {
+        const r = cv.getBoundingClientRect(), x = M.ORIGIN + (e.clientX - r.left) / r.width * M.SIZE, z = M.ORIGIN + (e.clientY - r.top) / r.height * M.SIZE
+        const near = this.places().find(p => Math.hypot(p.x - x, p.z - z) < 10)
+        if (near) this.game.setWaypoint(near.x, near.z, near.name, near.id); else this.game.setWaypoint(x, z, 'GPS waypoint', 'pin')
+        this.refreshPlaces(); this.drawBigMap()
+      })
+    }
+  }
+  // redraw the open map a few times a second so the arrow, police and traffic stay current
+  tickMap() {
+    if (this.modal !== 'menu' || !$('.menu-panel[data-panel="map"]')?.classList.contains('active')) return
+    const now = performance.now(); if (now - (this.mapT || 0) < 200) return
+    this.mapT = now; this.drawBigMap()
   }
   drawBlips(g, map, r) {
     const game = this.game
@@ -185,33 +251,44 @@ export class UI {
     for (const t of game.tokenDefs) if (!game.save.data.tokens.includes(t.id)) dot(t.x, t.z, '#4fb6ff', r * 0.7)
     const tg = game.missions.target()
     if (tg) for (const p of Array.isArray(tg) ? tg : [tg]) dot(p.x, p.z, '#ff4a3d')
-    if (game.vehicle && !game.vehicle.occupied) dot(game.vehicle.pos.x, game.vehicle.pos.z, '#ff9f43', r * 0.8)
+    const flash = Math.floor(performance.now() / 250) % 2
+    for (const u of game.police?.units || []) dot(u.pos.x, u.pos.z, flash ? '#ff3344' : '#3366ff', r * 0.8)
+    for (const a of game.activities?.blips() || []) dot(a.x, a.z, a.color, r * 0.75)
+    for (const v of game.vehicles?.list || []) if (!v.occupied && !v.police) dot(v.pos.x, v.pos.z, v.owned ? '#ff9f43' : '#9aa3ad', r * (v.owned ? 0.8 : 0.6))
+    if (game.house?.door) dot(game.house.door.x, game.house.door.z, '#b6f07a', r * 0.85)
+    if (game.waypoint) dot(game.waypoint.x, game.waypoint.z, '#b46bff', r * 0.95)
   }
   drawRadar(pos, heading) {
     const g = this.radar, S = 200, R = S / 2
     const zoom = 1.9 // px per unit
+    // heading-up: the facing direction (sin h, cos h) in world x/z must land on screen up, so the world turns by
+    // h + π (rotating by h alone put what is ahead of you below the arrow, and the map slid against your movement)
+    const rot = heading + Math.PI
     g.save(); g.clearRect(0, 0, S, S)
     g.beginPath(); g.arc(R, R, R - 2, 0, Math.PI * 2); g.clip()
-    g.translate(R, R); g.rotate(heading); g.scale(zoom, zoom); g.translate(-pos.x, -pos.z)
+    g.translate(R, R); g.rotate(rot); g.scale(zoom, zoom); g.translate(-pos.x, -pos.z)
     const src = this.game.city.groundCanvas
     g.drawImage(src, M.ORIGIN, M.ORIGIN, M.SIZE, M.SIZE)
     g.restore()
     g.save(); g.beginPath(); g.arc(R, R, R - 2, 0, Math.PI * 2); g.clip()
     const map = (x, z) => {
       let dx = x - pos.x, dz = z - pos.z
-      const c = Math.cos(heading), s = Math.sin(heading)
+      const c = Math.cos(rot), s = Math.sin(rot)
       let px = dx * c - dz * s, pz = dx * s + dz * c
       px *= zoom; pz *= zoom
       const d = Math.hypot(px, pz); if (d > R - 10) { px *= (R - 10) / d; pz *= (R - 10) / d }
       return [R + px, R + pz]
     }
+    // police search area around the last-seen point
+    const w = this.game.wanted
+    if (w?.level && w.unseen > 1 && w.lastSeen) { const [cx, cy] = map(w.lastSeen.x, w.lastSeen.z); g.beginPath(); g.arc(cx, cy, w.escapeRadius * zoom, 0, Math.PI * 2); g.fillStyle = 'rgba(61,214,245,.12)'; g.fill(); g.strokeStyle = 'rgba(61,214,245,.7)'; g.lineWidth = 2; g.stroke() }
     this.drawBlips(g, map, 6)
     // player arrow
     g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 2
     g.beginPath(); g.moveTo(R, R - 9); g.lineTo(R + 6, R + 7); g.lineTo(R, R + 3); g.lineTo(R - 6, R + 7); g.closePath(); g.fill(); g.stroke()
     g.restore()
     // north marker
-    const nx = R + Math.sin(heading) * (R - 12) * -1, ny = R - Math.cos(heading) * (R - 12)
+    const nx = R + Math.sin(rot) * (R - 12), ny = R - Math.cos(rot) * (R - 12)   // world north (0, -z) after the same turn
     g.fillStyle = '#f6c543'; g.font = 'bold 13px Anton, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('N', nx, ny)
   }
 }

@@ -70,6 +70,7 @@ export const projects = [
     role: 'Full stack developer',
     stack: 'MERN stack, Chart.js',
     url: 'https://github.com/Manishym956/IgniteEdge',
+    verified: false,   // repository owner / correctness not confirmed: the link is not shown anywhere until verified
     image: '/images/insightedge-1.png',
     blurb: 'Analytics dashboard built on the MERN stack with Chart.js visualisations.',
   },
@@ -122,5 +123,7 @@ export const socials = [
   { id: 'mail', name: 'Mail', url: 'mailto:kysuakshat23@gmail.com', handle: 'kysuakshat23@gmail.com' },
   { id: 'x', name: 'X', url: 'https://x.com/Akshat_B23', handle: '@Akshat_B23' },
   { id: 'instagram', name: 'Instagram', url: 'https://www.instagram.com/akshatb_23', handle: '@akshatb_23' },
-  { id: 'discord', name: 'Discord', url: 'https://discord.com/users/akshatbaranwal_99532', handle: 'akshatbaranwal_99532' },
+  { id: 'discord', name: 'Discord', url: 'https://discord.com/users/akshatbaranwal_99532', handle: 'akshatbaranwal_99532', verified: false },   // unpublished until a working profile or invite is supplied
 ]
+// only verified profiles are shown in the game
+export const verifiedSocials = socials.filter(s => s.verified !== false)
