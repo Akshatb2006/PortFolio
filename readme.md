@@ -1,150 +1,78 @@
-# Akshat Baranwal — Portfolio
-The 3D engine, art, and original code are his work; the content (intro, projects, billboards, links) has been adapted to reflect Akshat Baranwal. See `license.md` for the full license and copyright notice.
+# Akshat City — a GTA-style portfolio
 
-## Setup
+Akshat Baranwal's portfolio as a small open-world driving game. Visitors spawn in Grove Street,
+walk or drive around eight districts, and complete missions to unlock each section of the
+portfolio (about, experience, projects, lab, skills, achievements, socials). A plain
+"Résumé mode" is one click away on the title screen for people who just want the facts.
 
-Create `.env` file based on `.env.example`
+## Stack
 
-Download and install [Node.js](https://nodejs.org/en/download/) then run this followed commands:
+- [Three.js](https://threejs.org) for rendering (HDRI lighting, PBR materials, shadows, bloom, colour grade)
+- [Rapier](https://rapier.rs) for physics (raycast vehicle with suspension, character controller, dynamic props, explosions)
+- Vite for dev/build. No framework, no backend. Progress is saved in `localStorage`.
 
-``` bash
-# Install dependencies
-npm install --force
+## Run
 
-# Serve at localhost:1234
-npm run dev
-
-# Build for production in the dist/ directory
-npm run build
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run build    # static site in dist/
+npm run preview
 ```
 
-## Game loop
+Deploy `dist/` anywhere static (Vercel, Cloudflare Pages, GitHub Pages).
 
-#### 0
+## Edit the content
 
-- Time
-- Inputs
+Everything the city shows comes from two files:
 
-#### 1
+- `src/data/content.js` — about, experience, projects, lab, skills, achievements, socials.
+- `src/data/missions.js` — the 7 missions, billboard/sign landmarks, token positions and spawn point.
 
-- Player:pre-physics (Inputs)
+Images for projects go in `public/images/`.
 
-#### 2
+## Controls
 
-- PhysicalVehicle:pre-physics (Player:pre-physics)
+| Action | Keys |
+| --- | --- |
+| Move / drive | `W A S D` or arrows |
+| Handbrake (drift) | `Space` |
+| Interact / enter & exit car | `E` or `Enter` |
+| Camera first ↔ third person | `V` |
+| Map, missions, dossier | `M` or `Esc` |
+| Day ↔ night | `N` |
+| Respawn if stuck | `R` |
 
-#### 3
+Touch devices get a virtual joystick and buttons automatically.
 
-- Physics
+## Project layout
 
-#### 4
+```
+src/
+  main.js              boot, loop, day/night, cinematic intro
+  data/                content + missions (edit these)
+  game/
+    CityMap.js         grid maths, districts, colliders, minimap painting
+    City.js            builds the whole city (roads, buildings, props, water)
+    Assets.js          loads HDRI, PBR textures, GLB models
+    Physics.js         Rapier world, static colliders, dynamic props
+    Vehicle.js         player car (raycast vehicle) + Ferrari model
+    Player.js          on-foot character (Soldier) + character controller
+    Pedestrians.js     sidewalk walkers
+    Traffic.js         AI cars on the road graph
+    BgCars.js          one instanced mesh for all parked/traffic cars (LOD model)
+    Markers.js         mission markers, checkpoints, tokens
+    Missions.js        mission state machine
+    UI.js              HUD, dialogue, cards, menu, radar, résumé mode
+    Effects.js         particles (explosions, sparks, tyre smoke)
+    Postfx.js          bloom + colour grade
+    Audio.js           synthesised engine / UI / explosion sounds
+scripts/make-car-lod.mjs   regenerates the decimated background car
+```
 
-- PhysicsWireframe (Physics)
-- Objects (Physics)
+## Credits
 
-#### 5
-
-- PhysicalVehicle:post-physics (Player:pre-physics)
-
-#### 6
-
-- Player:post-physics (Physics, PhysicalVehicle:post-physics)
-
-#### 7
-
-- View (Inputs, Player:post-physics)
-
-#### 8
-
-- Intro
-- DayCycles
-- YearCycles
-- Weather (DayCycles, YearCycles)
-- Zones (Player:post-physics)
-- VisualVehicle (PhysicalVehicle:post-physics, Inputs, Player:post-physics, View)
-
-#### 9
-
-- Wind (Weather)
-- Lighting (DayCycles, View)
-- Tornado (DayCycles, PhysicalVehicle)
-- InteractivePoints (Player:post-physics)
-- Tracks (VisualVehicle)
-
-#### 10
-
-- Area++ (View, PhysicalVehicle:post-physics, Player:post-physics, Wind)
-- Foliage (VisualVehicle, View)
-- Fog (View)
-- Reveal (DayCycles)
-- Terrain (Tracks)
-- Trails (PhysicalVehicle)
-- Floor (View)
-- Grass (View, Wind)
-- Leaves (View, PhysicalVehicle)
-- Lightnings (View, Weather)
-- RainLines (View, Weather, Reveal)
-- Snow (View, Weather, Reveal, Tracks)
-- VisualTornado (Tornado)
-- WaterSurface (Weather, View)
-- Benches (Objects)
-- Bricks (Objects)
-- ExplosiveCrates (Objects)
-- Fences (Objects)
-- Lanterns (Objects)
-- Whispers (Player)
-
-#### 13
-
-- InstancedGroup (Objects, [SpecificObjects])
-
-#### 14
-
-- Audio (View, Objects)
-- Notifications
-- Title (PhysicalVehicle:post-physics)
-
-#### 998
-
-- Rendering
-
-#### 999
-
-- Monitoring
-
-## Blender
-
-### Export
-
-- Mute the palette texture node (loaded and set in Three.js `Material` directly)
-- Use corresponding export presets
-- Don't use compression (will be done later)
-
-### Compress
-
-Run `npm run compress`
-
-Will do the following
-
-#### GLB
-
-- Traverses the `static/` folder looking for glb files (ignoring already compressed files)
-- Compresses embeded texture with `etc1s --quality 255` (lossy, GPU friendly)
-- Generates new files to preserve originals
-
-#### Texture files
-
-- Traverses the `static/` folder looking for `png|jpg` files (ignoring non-model related folders)
-- Compresses with default preset to `--encode etc1s --qlevel 255` (lossy, GPU friendly) or specific preset according to path
-- Generates new files to preserve originals
-
-#### UI files
-
-- Traverses the `static/ui.` folder looking for `png|jpg` files
-- Compresses to WebP
-
-#### Resources
-
-- https://gltf-transform.dev/cli
-- https://github.com/KhronosGroup/KTX-Software?tab=readme-ov-file
-- https://github.khronos.org/KTX-Software/ktxtools/toktx.html
+- Car: “Ferrari 458 Italia” by vicent091036 (CC-BY), from the three.js examples.
+- Character: “Soldier” (Mixamo), from the three.js examples.
+- Sky HDRI and the outer-terrain grass texture: [Poly Haven](https://polyhaven.com) (CC0). Water normal map: three.js examples.
+- Everything else (city, buildings, props, UI, audio) is procedural / original.
